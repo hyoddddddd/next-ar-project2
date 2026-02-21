@@ -222,6 +222,17 @@ model-viewer {
   transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
 }
 
+.camera-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.chip-soft {
+  background: linear-gradient(130deg, #3e4d66 0%, #273449 100%);
+}
+
 .chip:hover,
 .sound-btn:hover {
   transform: translateY(-1px);
@@ -270,6 +281,10 @@ model-viewer {
   animation-delay: 0.36s;
 }
 
+.reveal-6 {
+  animation-delay: 0.44s;
+}
+
 @media (max-width: 860px) {
   .page-shell {
     width: min(1120px, calc(100% - 1.2rem));
@@ -277,6 +292,11 @@ model-viewer {
   }
 
   .viewer-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .camera-head {
     flex-direction: column;
     align-items: flex-start;
   }
