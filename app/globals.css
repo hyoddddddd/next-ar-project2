@@ -229,6 +229,98 @@ model-viewer {
   gap: 0.8rem;
 }
 
+.health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.health-badge {
+  border-radius: 999px;
+  padding: 0.34rem 0.68rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.health-excellent {
+  color: #14532d;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.health-stable {
+  color: #1e3a8a;
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.health-care {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.health-critical {
+  color: #7f1d1d;
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.health-score {
+  margin: 0.7rem 0 0;
+  color: var(--text-soft);
+}
+
+.health-score strong {
+  color: var(--text);
+  font-size: 1.35rem;
+}
+
+.health-grid {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 0.72rem;
+}
+
+.health-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.36rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.health-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(36, 53, 79, 0.11);
+  overflow: hidden;
+}
+
+.health-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+
+.health-action-row {
+  margin-top: 1rem;
+}
+
+.chip-health {
+  background: linear-gradient(130deg, #0f766e 0%, #0f5f88 100%);
+}
+
+.health-note {
+  margin: 0.9rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+}
+
 .chip-soft {
   background: linear-gradient(130deg, #3e4d66 0%, #273449 100%);
 }
@@ -285,6 +377,10 @@ model-viewer {
   animation-delay: 0.44s;
 }
 
+.reveal-7 {
+  animation-delay: 0.52s;
+}
+
 @media (max-width: 860px) {
   .page-shell {
     width: min(1120px, calc(100% - 1.2rem));
@@ -297,6 +393,11 @@ model-viewer {
   }
 
   .camera-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .health-head {
     flex-direction: column;
     align-items: flex-start;
   }

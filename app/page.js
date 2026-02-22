@@ -29,6 +29,49 @@ const CAMERA_PRESETS = [
   { id: "top", label: "Top", theta: 0, phi: 28, radius: 130 },
   { id: "hero", label: "Hero", theta: 32, phi: 64, radius: 98 },
 ];
+const PET_BASE_HEALTH = {
+  dog: { energy: 82, mood: 76, fitness: 79, hydration: 72 },
+  cat: { energy: 74, mood: 84, fitness: 68, hydration: 77 },
+};
+const HEALTH_METRICS = [
+  { key: "energy", label: "Energy", color: "#ff8a5b" },
+  { key: "mood", label: "Mood", color: "#4fc3f7" },
+  { key: "fitness", label: "Fitness", color: "#22c55e" },
+  { key: "hydration", label: "Hydration", color: "#3b82f6" },
+];
+const HEALTH_ACTIONS = [
+  { id: "feed", label: "Feed", delta: { energy: 12, mood: 3, hydration: 2 } },
+  { id: "water", label: "Water", delta: { hydration: 16, mood: 2 } },
+  { id: "play", label: "Play", delta: { mood: 10, fitness: 4, energy: -5 } },
+  { id: "rest", label: "Rest", delta: { energy: 9, mood: 5 } },
+];
+
+function clampMetric(value) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function getHealthDeltaFromAnimation(animationName) {
+  const name = (animationName || "").toLowerCase();
+
+  if (
+    name.includes("run") ||
+    name.includes("jump") ||
+    name.includes("attack") ||
+    name.includes("gallop")
+  ) {
+    return { energy: -2.6, mood: 0.8, fitness: 1.3, hydration: -1.1 };
+  }
+
+  if (name.includes("walk") || name.includes("survey")) {
+    return { energy: -1.4, mood: 0.5, fitness: 0.9, hydration: -0.7 };
+  }
+
+  if (name.includes("idle") || name.includes("rest") || name.includes("sleep")) {
+    return { energy: 1.2, mood: 0.3, fitness: 0.1, hydration: -0.2 };
+  }
+
+  return { energy: -0.7, mood: 0.2, fitness: 0.4, hydration: -0.4 };
+}
 
 function orderAnimations(animations) {
   const unique = [...new Set(animations.filter(Boolean))];
@@ -64,6 +107,9 @@ export default function Home() {
   const [availableAnimations, setAvailableAnimations] = useState([]);
   const [activeAnimation, setActiveAnimation] = useState("");
   const [isPlayingSound, setIsPlayingSound] = useState(false);
+  const [health, setHealth] = useState({
+    ...PET_BASE_HEALTH[PETS[0].id],
+  });
   const [activeCameraPreset, setActiveCameraPreset] = useState(
     CAMERA_PRESETS[0].id,
   );
@@ -73,6 +119,22 @@ export default function Home() {
     () => PETS.find((pet) => pet.id === activePetId) ?? PETS[0],
     [activePetId],
   );
+  const healthScore = useMemo(
+    () =>
+      Math.round(
+        health.energy * 0.34 +
+          health.mood * 0.28 +
+          health.fitness * 0.23 +
+          health.hydration * 0.15,
+      ),
+    [health],
+  );
+  const healthStatus = useMemo(() => {
+    if (healthScore >= 85) return { label: "Excellent", tone: "excellent" };
+    if (healthScore >= 70) return { label: "Stable", tone: "stable" };
+    if (healthScore >= 50) return { label: "Needs Care", tone: "care" };
+    return { label: "Critical", tone: "critical" };
+  }, [healthScore]);
 
   const stopSound = useCallback(() => {
     if (!audioRef.current) return;
@@ -178,8 +240,30 @@ export default function Home() {
     setIsLoadingModel(true);
     setAvailableAnimations([]);
     setActiveAnimation("");
+    setHealth({
+      ...(PET_BASE_HEALTH[activePetId] ?? PET_BASE_HEALTH[PETS[0].id]),
+    });
     stopSound();
   }, [activePetId, stopSound]);
+
+  useEffect(() => {
+    const timerId = setInterval(() => {
+      if (isLoadingModel) return;
+
+      const delta = getHealthDeltaFromAnimation(activeAnimation);
+
+      setHealth((prev) => ({
+        energy: clampMetric(prev.energy + delta.energy),
+        mood: clampMetric(prev.mood + delta.mood),
+        fitness: clampMetric(prev.fitness + delta.fitness),
+        hydration: clampMetric(prev.hydration + delta.hydration),
+      }));
+    }, 2500);
+
+    return () => {
+      clearInterval(timerId);
+    };
+  }, [activeAnimation, isLoadingModel]);
 
   useEffect(() => {
     if (!isCameraTouring) {
@@ -282,6 +366,10 @@ export default function Home() {
     try {
       await audio.play();
       setIsPlayingSound(true);
+      setHealth((prev) => ({
+        ...prev,
+        mood: clampMetric(prev.mood + 2.5),
+      }));
     } catch {
       setIsPlayingSound(false);
     }
@@ -289,6 +377,17 @@ export default function Home() {
 
   const toggleCameraTour = useCallback(() => {
     setIsCameraTouring((prev) => !prev);
+  }, []);
+  const applyHealthAction = useCallback((actionId) => {
+    const action = HEALTH_ACTIONS.find((item) => item.id === actionId);
+    if (!action) return;
+
+    setHealth((prev) => ({
+      energy: clampMetric(prev.energy + (action.delta.energy ?? 0)),
+      mood: clampMetric(prev.mood + (action.delta.mood ?? 0)),
+      fitness: clampMetric(prev.fitness + (action.delta.fitness ?? 0)),
+      hydration: clampMetric(prev.hydration + (action.delta.hydration ?? 0)),
+    }));
   }, []);
 
   return (
@@ -361,6 +460,52 @@ export default function Home() {
       </section>
 
       <section className="panel reveal reveal-4">
+        <div className="health-head">
+          <h2>Wellness Tracker</h2>
+          <span className={`health-badge health-${healthStatus.tone}`}>
+            {healthStatus.label}
+          </span>
+        </div>
+        <p className="health-score">
+          Health Score <strong>{healthScore}</strong>/100
+        </p>
+        <div className="health-grid">
+          {HEALTH_METRICS.map((metric) => (
+            <div key={metric.key} className="health-row">
+              <div className="health-row-head">
+                <span>{metric.label}</span>
+                <span>{Math.round(health[metric.key])}%</span>
+              </div>
+              <div className="health-track">
+                <span
+                  className="health-fill"
+                  style={{
+                    width: `${health[metric.key]}%`,
+                    background: metric.color,
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="button-row health-action-row">
+          {HEALTH_ACTIONS.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              className="chip chip-health"
+              onClick={() => applyHealthAction(action.id)}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+        <p className="health-note">
+          Simulation metric for the AR pet experience, not a medical system.
+        </p>
+      </section>
+
+      <section className="panel reveal reveal-5">
         <div className="camera-head">
           <h2>Camera Motion</h2>
           <button
@@ -392,7 +537,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="panel reveal reveal-5">
+      <section className="panel reveal reveal-6">
         <h2>Animations</h2>
         {availableAnimations.length > 0 ? (
           <div className="button-row">
@@ -414,7 +559,7 @@ export default function Home() {
         )}
       </section>
 
-      <section className="panel reveal reveal-6">
+      <section className="panel reveal reveal-7">
         <h2>Sound</h2>
         <button
           type="button"
