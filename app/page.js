@@ -45,9 +45,52 @@ const HEALTH_ACTIONS = [
   { id: "play", label: "Play", delta: { mood: 10, fitness: 4, energy: -5 } },
   { id: "rest", label: "Rest", delta: { energy: 9, mood: 5 } },
 ];
+const ESSENTIAL_ANIMATION_NAMES = ["Idle", "Walk", "Run", "Jump", "Survey"];
+const MAX_VISIBLE_ANIMATIONS = 4;
+const SENSOR_POLL_MS = 3000;
+const SENSOR_STALE_MS = 15000;
 
 function clampMetric(value) {
   return Math.max(0, Math.min(100, value));
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function blendMetric(current, target, weight) {
+  return current + (target - current) * weight;
+}
+
+function mapSensorReadingToHealth(reading) {
+  if (!reading) return null;
+
+  const heartRate = clamp(reading.heartRate ?? 90, 35, 220);
+  const temperatureC = clamp(reading.temperatureC ?? 38.3, 34, 43);
+  const spo2 = clamp(reading.spo2 ?? 96, 70, 100);
+  const activityLevel = clamp(reading.activityLevel ?? 45, 0, 100);
+  const hydrationPct = clamp(reading.hydrationPct ?? 72, 0, 100);
+
+  const heartRateScore = clampMetric(100 - Math.abs(heartRate - 95) * 1.1);
+  const temperatureScore = clampMetric(100 - Math.abs(temperatureC - 38.3) * 45);
+
+  return {
+    energy: clampMetric(
+      activityLevel * 0.48 + heartRateScore * 0.22 + spo2 * 0.15 + temperatureScore * 0.15,
+    ),
+    mood: clampMetric(
+      heartRateScore * 0.3 + temperatureScore * 0.26 + spo2 * 0.2 + hydrationPct * 0.24,
+    ),
+    fitness: clampMetric(activityLevel * 0.58 + spo2 * 0.26 + heartRateScore * 0.16),
+    hydration: clampMetric(hydrationPct * 0.85 + temperatureScore * 0.15),
+  };
+}
+
+function formatSensorTime(timestamp) {
+  if (!timestamp) return "No live data";
+  const deltaSec = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (deltaSec < 3) return "Updated just now";
+  return `Updated ${deltaSec}s ago`;
 }
 
 function getHealthDeltaFromAnimation(animationName) {
@@ -89,6 +132,22 @@ function orderAnimations(animations) {
   return [...preferred, ...extras];
 }
 
+function pickEssentialAnimations(animations) {
+  const normalizedMap = new Map(
+    animations.map((name) => [name.toLowerCase(), name]),
+  );
+
+  const essentials = ESSENTIAL_ANIMATION_NAMES.map((name) =>
+    normalizedMap.get(name.toLowerCase()),
+  ).filter(Boolean);
+
+  if (essentials.length > 0) {
+    return essentials.slice(0, MAX_VISIBLE_ANIMATIONS);
+  }
+
+  return animations.slice(0, Math.min(3, animations.length));
+}
+
 export default function Home() {
   const viewerRef = useRef(null);
   const audioRef = useRef(null);
@@ -110,6 +169,10 @@ export default function Home() {
   const [health, setHealth] = useState({
     ...PET_BASE_HEALTH[PETS[0].id],
   });
+  const [sensorSnapshot, setSensorSnapshot] = useState(null);
+  const [sensorError, setSensorError] = useState("");
+  const [isSensorSyncEnabled, setIsSensorSyncEnabled] = useState(true);
+  const [sensorClock, setSensorClock] = useState(Date.now());
   const [activeCameraPreset, setActiveCameraPreset] = useState(
     CAMERA_PRESETS[0].id,
   );
@@ -135,6 +198,18 @@ export default function Home() {
     if (healthScore >= 50) return { label: "Needs Care", tone: "care" };
     return { label: "Critical", tone: "critical" };
   }, [healthScore]);
+  const isDogSensorMode = activePetId === "dog" && isSensorSyncEnabled;
+  const isSensorFresh = useMemo(() => {
+    if (!sensorSnapshot?.timestamp) return false;
+    return Date.now() - sensorSnapshot.timestamp <= SENSOR_STALE_MS;
+  }, [sensorClock, sensorSnapshot]);
+  const sensorLabel = useMemo(() => {
+    if (!isSensorSyncEnabled) return "Sensor Sync Off";
+    if (sensorError) return "Sensor Error";
+    if (isSensorFresh) return "Sensor Live";
+    if (sensorSnapshot?.timestamp) return "Sensor Stale";
+    return "Waiting Sensor Data";
+  }, [isSensorFresh, isSensorSyncEnabled, sensorError, sensorSnapshot]);
 
   const stopSound = useCallback(() => {
     if (!audioRef.current) return;
@@ -237,6 +312,16 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const timerId = setInterval(() => {
+      setSensorClock(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(timerId);
+    };
+  }, []);
+
+  useEffect(() => {
     setIsLoadingModel(true);
     setAvailableAnimations([]);
     setActiveAnimation("");
@@ -247,8 +332,55 @@ export default function Home() {
   }, [activePetId, stopSound]);
 
   useEffect(() => {
+    if (!isClient || !isSensorSyncEnabled) return;
+
+    let isActive = true;
+
+    const pullSensorData = async () => {
+      try {
+        const response = await fetch("/api/health/live?petId=dog", {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Sensor endpoint unavailable");
+
+        const payload = await response.json();
+        if (!isActive) return;
+
+        setSensorSnapshot(payload.reading ?? null);
+        setSensorError("");
+
+        if (isDogSensorMode && payload.reading) {
+          const mapped = mapSensorReadingToHealth(payload.reading);
+          if (mapped) {
+            setHealth((prev) => ({
+              energy: clampMetric(blendMetric(prev.energy, mapped.energy, 0.68)),
+              mood: clampMetric(blendMetric(prev.mood, mapped.mood, 0.68)),
+              fitness: clampMetric(blendMetric(prev.fitness, mapped.fitness, 0.68)),
+              hydration: clampMetric(
+                blendMetric(prev.hydration, mapped.hydration, 0.68),
+              ),
+            }));
+          }
+        }
+      } catch {
+        if (!isActive) return;
+        setSensorError("Cannot pull live sensor data");
+      }
+    };
+
+    pullSensorData();
+    const intervalId = setInterval(pullSensorData, SENSOR_POLL_MS);
+
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, [isClient, isDogSensorMode, isSensorSyncEnabled]);
+
+  useEffect(() => {
     const timerId = setInterval(() => {
       if (isLoadingModel) return;
+      if (isDogSensorMode && isSensorFresh) return;
 
       const delta = getHealthDeltaFromAnimation(activeAnimation);
 
@@ -263,7 +395,12 @@ export default function Home() {
     return () => {
       clearInterval(timerId);
     };
-  }, [activeAnimation, isLoadingModel]);
+  }, [activeAnimation, isDogSensorMode, isLoadingModel, isSensorFresh]);
+
+  useEffect(() => {
+    if (isSensorSyncEnabled) return;
+    setSensorError("");
+  }, [isSensorSyncEnabled]);
 
   useEffect(() => {
     if (!isCameraTouring) {
@@ -304,11 +441,12 @@ export default function Home() {
         ? viewer.availableAnimations
         : [];
       const orderedAnimations = orderAnimations(rawAnimations);
+      const essentialAnimations = pickEssentialAnimations(orderedAnimations);
 
-      setAvailableAnimations(orderedAnimations);
+      setAvailableAnimations(essentialAnimations);
 
-      if (orderedAnimations.length > 0) {
-        const nextAnimation = orderedAnimations[0];
+      if (essentialAnimations.length > 0) {
+        const nextAnimation = essentialAnimations[0];
         viewer.animationName = nextAnimation;
         viewer.play();
         setActiveAnimation(nextAnimation);
@@ -326,9 +464,19 @@ export default function Home() {
       setAvailableAnimations([]);
       setActiveAnimation("");
     };
+    const handleArStatus = (event) => {
+      if (event?.detail?.status === "session-started") {
+        const nextAnimation = viewer.animationName || activeAnimation;
+        if (nextAnimation) {
+          viewer.animationName = nextAnimation;
+        }
+        viewer.play();
+      }
+    };
 
     viewer.addEventListener("load", handleModelLoad);
     viewer.addEventListener("error", handleModelError);
+    viewer.addEventListener("ar-status", handleArStatus);
 
     if (viewer.loaded) {
       handleModelLoad();
@@ -337,8 +485,9 @@ export default function Home() {
     return () => {
       viewer.removeEventListener("load", handleModelLoad);
       viewer.removeEventListener("error", handleModelError);
+      viewer.removeEventListener("ar-status", handleArStatus);
     };
-  }, [isClient, setCameraOrbit]);
+  }, [activeAnimation, isClient, setCameraOrbit]);
 
   const playAnimation = useCallback((animationName) => {
     if (!viewerRef.current || !animationName) return;
@@ -389,19 +538,53 @@ export default function Home() {
       hydration: clampMetric(prev.hydration + (action.delta.hydration ?? 0)),
     }));
   }, []);
+  const ensureAnimationIsPlaying = useCallback(
+    (preferredAnimation) => {
+      const viewer = viewerRef.current;
+      if (!viewer) return;
+
+      const nextAnimation = preferredAnimation || activeAnimation;
+      if (nextAnimation) {
+        viewer.animationName = nextAnimation;
+      }
+      viewer.play();
+    },
+    [activeAnimation],
+  );
+  const openArCamera = useCallback(async () => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    ensureAnimationIsPlaying();
+    try {
+      await viewer.activateAR();
+    } catch {
+      // No-op: unsupported browsers simply stay in 3D mode.
+    }
+  }, [ensureAnimationIsPlaying]);
 
   return (
     <main className="page-shell">
-      <div className="bg-orb orb-1" aria-hidden="true" />
-      <div className="bg-orb orb-2" aria-hidden="true" />
-
       <section className="hero reveal reveal-1">
         <p className="eyebrow">WebXR Playground</p>
         <h1>AR Pet Studio</h1>
         <p className="subtitle">
-          Tap a pet, inspect the model in 3D, then launch it in AR. Animation
-          buttons are auto-generated from each GLB file.
+          เลือกสัตว์ ดูโมเดล 3D/AR และติดตามสุขภาพในหน้าเดียว
         </p>
+        <div className="quick-overview">
+          <article className="quick-card">
+            <p>Active Pet</p>
+            <strong>{activePet.label}</strong>
+          </article>
+          <article className="quick-card">
+            <p>Health Score</p>
+            <strong>{healthScore}/100</strong>
+          </article>
+          <article className="quick-card">
+            <p>Sensor</p>
+            <strong>{activePetId === "dog" ? sensorLabel : "Dog only"}</strong>
+          </article>
+        </div>
       </section>
 
       {PETS.length > 1 && (
@@ -429,9 +612,19 @@ export default function Home() {
       <section className="panel reveal reveal-3">
         <div className="viewer-header">
           <h2>{activePet.label} Model Viewer</h2>
-          <span className="status-chip">
-            {isLoadingModel ? "Loading model..." : "Model ready"}
-          </span>
+          <div className="viewer-actions">
+            <span className="status-chip">
+              {isLoadingModel ? "Loading model..." : "Model ready"}
+            </span>
+            <button
+              type="button"
+              className="chip chip-soft"
+              onClick={openArCamera}
+              disabled={isLoadingModel}
+            >
+              Open AR Camera
+            </button>
+          </div>
         </div>
 
         <div className="viewer-wrapper">
@@ -447,6 +640,9 @@ export default function Home() {
               src={activePet.modelPath}
               ar
               ar-modes="scene-viewer webxr quick-look"
+              autoplay
+              animation-loop
+              animation-name={activeAnimation || undefined}
               camera-controls
               shadow-intensity="1"
               exposure="1"
@@ -462,10 +658,66 @@ export default function Home() {
       <section className="panel reveal reveal-4">
         <div className="health-head">
           <h2>Wellness Tracker</h2>
-          <span className={`health-badge health-${healthStatus.tone}`}>
-            {healthStatus.label}
-          </span>
+          <div className="health-head-actions">
+            <span className={`health-badge health-${healthStatus.tone}`}>
+              {healthStatus.label}
+            </span>
+            <button
+              type="button"
+              className={`chip chip-soft chip-sensor-toggle ${
+                isSensorSyncEnabled ? "is-active" : ""
+              }`}
+              onClick={() => setIsSensorSyncEnabled((prev) => !prev)}
+            >
+              {isSensorSyncEnabled ? "Sensor Sync On" : "Sensor Sync Off"}
+            </button>
+          </div>
         </div>
+        {activePetId === "dog" && (
+          <div className="sensor-card">
+            <div className="sensor-status-row">
+              <span
+                className={`sensor-pill ${
+                  sensorLabel === "Sensor Live"
+                    ? "sensor-live"
+                    : sensorLabel === "Sensor Stale"
+                      ? "sensor-stale"
+                      : sensorLabel === "Sensor Error"
+                        ? "sensor-error"
+                        : "sensor-wait"
+                }`}
+              >
+                {sensorLabel}
+              </span>
+              <span className="sensor-updated">
+                {formatSensorTime(sensorSnapshot?.timestamp)}
+              </span>
+            </div>
+            <div className="sensor-grid">
+              <div>
+                <p>Heart Rate</p>
+                <strong>{sensorSnapshot?.heartRate ?? "--"} bpm</strong>
+              </div>
+              <div>
+                <p>Temp</p>
+                <strong>{sensorSnapshot?.temperatureC ?? "--"} C</strong>
+              </div>
+              <div>
+                <p>SpO2</p>
+                <strong>{sensorSnapshot?.spo2 ?? "--"}%</strong>
+              </div>
+              <div>
+                <p>Activity</p>
+                <strong>{sensorSnapshot?.activityLevel ?? "--"}%</strong>
+              </div>
+            </div>
+            {sensorError && <p className="sensor-error-copy">{sensorError}</p>}
+            <p className="sensor-hint">
+              Feed sensor data by POSTing to <code>/api/health/ingest</code> from
+              your device gateway.
+            </p>
+          </div>
+        )}
         <p className="health-score">
           Health Score <strong>{healthScore}</strong>/100
         </p>
@@ -506,68 +758,72 @@ export default function Home() {
       </section>
 
       <section className="panel reveal reveal-5">
-        <div className="camera-head">
-          <h2>Camera Motion</h2>
-          <button
-            type="button"
-            className={`chip chip-soft ${isCameraTouring ? "is-active" : ""}`}
-            onClick={toggleCameraTour}
-          >
-            {isCameraTouring ? "Stop Auto Tour" : "Start Auto Tour"}
-          </button>
-        </div>
-        <p className="empty-copy">
-          ใช้ปุ่มมุมกล้องสำหรับช็อตนิ่ง หรือเปิด Auto Tour เพื่อหมุนกล้องรอบโมเดล
-        </p>
-        <div className="button-row">
-          {CAMERA_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              className={`chip ${
-                !isCameraTouring && activeCameraPreset === preset.id
-                  ? "is-active"
-                  : ""
-              }`}
-              onClick={() => applyCameraPreset(preset.id)}
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel reveal reveal-6">
-        <h2>Animations</h2>
-        {availableAnimations.length > 0 ? (
-          <div className="button-row">
-            {availableAnimations.map((animationName) => (
+        <h2>Controls</h2>
+        <p className="empty-copy">รวมปุ่มควบคุมสำคัญไว้ในแผงเดียว</p>
+        <div className="control-stack">
+          <div className="control-block">
+            <div className="camera-head">
+              <h3 className="control-head">Camera Motion</h3>
               <button
-                key={animationName}
                 type="button"
-                className={`chip ${activeAnimation === animationName ? "is-active" : ""}`}
-                onClick={() => playAnimation(animationName)}
+                className={`chip chip-soft ${isCameraTouring ? "is-active" : ""}`}
+                onClick={toggleCameraTour}
               >
-                {animationName}
+                {isCameraTouring ? "Stop Auto Tour" : "Start Auto Tour"}
               </button>
-            ))}
+            </div>
+            <div className="button-row">
+              {CAMERA_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`chip ${
+                    !isCameraTouring && activeCameraPreset === preset.id
+                      ? "is-active"
+                      : ""
+                  }`}
+                  onClick={() => applyCameraPreset(preset.id)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : (
-          <p className="empty-copy">
-            No embedded animations detected for this model.
-          </p>
-        )}
-      </section>
 
-      <section className="panel reveal reveal-7">
-        <h2>Sound</h2>
-        <button
-          type="button"
-          className={`sound-btn ${isPlayingSound ? "is-playing" : ""}`}
-          onClick={toggleSound}
-        >
-          {isPlayingSound ? "Stop Sound" : "Play Sound"}
-        </button>
+          <div className="control-block">
+            <h3 className="control-head">Animations</h3>
+            {availableAnimations.length > 0 ? (
+              <div className="button-row">
+                {availableAnimations.map((animationName) => (
+                  <button
+                    key={animationName}
+                    type="button"
+                    className={`chip ${activeAnimation === animationName ? "is-active" : ""}`}
+                    onClick={() => playAnimation(animationName)}
+                  >
+                    {animationName}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-copy">No embedded animations detected for this model.</p>
+            )}
+            {availableAnimations.length > 0 && (
+              <p className="control-tip">แสดงเฉพาะท่าหลักที่จำเป็น</p>
+            )}
+          </div>
+
+          <div className="control-block">
+            <h3 className="control-head">Sound</h3>
+            <button
+              type="button"
+              className={`sound-btn ${isPlayingSound ? "is-playing" : ""}`}
+              onClick={toggleSound}
+            >
+              {isPlayingSound ? "Stop Sound" : "Play Sound"}
+            </button>
+          </div>
+        </div>
       </section>
     </main>
   );
