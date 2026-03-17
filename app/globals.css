@@ -97,7 +97,7 @@ h3 {
 .quick-overview {
   margin-top: 1rem;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.65rem;
 }
 
@@ -131,6 +131,89 @@ h3 {
 
 .panel h2 {
   font-size: 1.1rem;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.profile-grid {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 0.8rem;
+}
+
+.profile-card {
+  border: 1px solid rgba(26, 45, 76, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 14px;
+  padding: 0.82rem;
+}
+
+.profile-field {
+  display: grid;
+  gap: 0.38rem;
+  margin-bottom: 0.75rem;
+}
+
+.profile-field:last-child {
+  margin-bottom: 0;
+}
+
+.profile-field span {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.profile-field input,
+.profile-field select,
+.profile-field textarea {
+  width: 100%;
+  border: 1px solid rgba(27, 44, 74, 0.17);
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 10px;
+  padding: 0.58rem 0.64rem;
+  font: inherit;
+  color: var(--text);
+}
+
+.profile-field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.avatar-wrap {
+  width: min(240px, 100%);
+  margin: 0 auto 0.75rem;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(22, 41, 70, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.avatar-wrap img {
+  width: 100%;
+  display: block;
+}
+
+.profile-ai-line {
+  margin: 0.58rem 0 0;
+  color: var(--text-soft);
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
+.profile-ai-line strong {
+  color: var(--text);
+}
+
+.profile-card .chip {
+  margin-top: 0.72rem;
 }
 
 .pet-grid {
@@ -565,6 +648,15 @@ model-viewer {
 
   .quick-overview {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .profile-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr;
   }
 
   .health-head {
