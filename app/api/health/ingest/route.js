@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { setLatestSensorReading } from "../../../../lib/health-sensor-store";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -19,7 +22,15 @@ export async function POST(request) {
   if (sensorApiKey) {
     const inputKey = request.headers.get("x-sensor-key");
     if (inputKey !== sensorApiKey) {
-      return NextResponse.json({ ok: false, error: "Unauthorized sensor key" }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized sensor key" },
+        {
+          status: 401,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        },
+      );
     }
   }
 
@@ -27,12 +38,28 @@ export async function POST(request) {
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "Invalid JSON body" },
+      {
+        status: 400,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
   }
 
   const petId = (payload.petId ?? "dog").toString().trim().toLowerCase();
   if (!petId) {
-    return NextResponse.json({ ok: false, error: "petId is required" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "petId is required" },
+      {
+        status: 400,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
   }
 
   const errors = [
@@ -48,10 +75,18 @@ export async function POST(request) {
   }
 
   if (errors.length > 0) {
-    return NextResponse.json({ ok: false, error: errors.join(", ") }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: errors.join(", ") },
+      {
+        status: 400,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
   }
 
-  const reading = setLatestSensorReading(petId, {
+  const reading = await setLatestSensorReading(petId, {
     heartRate: Number(payload.heartRate),
     temperatureC: Number(payload.temperatureC),
     spo2: Number(payload.spo2),
@@ -59,5 +94,13 @@ export async function POST(request) {
     hydrationPct: hydrationPctRaw === null ? 72 : hydrationPctRaw,
   });
 
-  return NextResponse.json({ ok: true, reading }, { status: 200 });
+  return NextResponse.json(
+    { ok: true, reading },
+    {
+      status: 200,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
 }

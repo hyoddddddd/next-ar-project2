@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { getLatestSensorReading } from "../../../../lib/health-sensor-store";
 
 const SENSOR_STALE_MS = 15000;
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const petId = (searchParams.get("petId") ?? "dog").trim().toLowerCase();
-  const reading = getLatestSensorReading(petId);
+  const reading = await getLatestSensorReading(petId);
 
   if (!reading) {
     return NextResponse.json(
@@ -18,7 +19,12 @@ export async function GET(request) {
         reading: null,
         isFresh: false,
       },
-      { status: 200 },
+      {
+        status: 200,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
     );
   }
 
@@ -31,6 +37,11 @@ export async function GET(request) {
       reading,
       isFresh,
     },
-    { status: 200 },
+    {
+      status: 200,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
   );
 }

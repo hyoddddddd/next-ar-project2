@@ -21,7 +21,6 @@ const PETS = [
   },
 ];
 
-const PREFERRED_ANIMATIONS = ["Idle", "Walk", "Run", "Jump"];
 const CAMERA_PRESETS = [
   { id: "front", label: "Front", theta: 0, phi: 70, radius: 110 },
   { id: "left", label: "Left", theta: 90, phi: 70, radius: 110 },
@@ -29,75 +28,129 @@ const CAMERA_PRESETS = [
   { id: "top", label: "Top", theta: 0, phi: 28, radius: 130 },
   { id: "hero", label: "Hero", theta: 32, phi: 64, radius: 98 },
 ];
+
 const PET_BASE_HEALTH = {
   dog: { energy: 82, mood: 76, fitness: 79, hydration: 72 },
   cat: { energy: 74, mood: 84, fitness: 68, hydration: 77 },
 };
-const PROFILE_STORAGE_KEY = "ar_pet_profiles_v1";
-const DEFAULT_PET_PROFILES = {
-  dog: {
-    name: "Bolt",
-    age: 4,
-    voiceStyle: "playful",
-    storySeed: "ชอบวิ่งในสวนและเฝ้าบ้านช่วงเย็น",
-  },
-  cat: {
-    name: "Luna",
-    age: 3,
-    voiceStyle: "gentle",
-    storySeed: "ชอบนอนอาบแดดและเดินสำรวจบ้านตอนเช้า",
-  },
-};
-const VOICE_STYLES = [
-  {
-    id: "playful",
-    label: "Playful",
-    dogBark: "โฮ่ง! โฮ่ง! พร้อมเล่นทันที",
-    catVoice: "เหมียว~ เรามาเล่นกันเถอะ",
-    playbackRate: 1.08,
-  },
-  {
-    id: "gentle",
-    label: "Gentle",
-    dogBark: "โฮ่ง... โฮ่ง... อย่างสุภาพ",
-    catVoice: "เหมียว... อย่างนุ่มนวล",
-    playbackRate: 0.94,
-  },
-  {
-    id: "guardian",
-    label: "Guardian",
-    dogBark: "โฮ่ง! ฉันเฝ้าบ้านอยู่ตรงนี้",
-    catVoice: "เมี้ยว! ฉันคุมพื้นที่เรียบร้อย",
-    playbackRate: 1.02,
-  },
-];
+
 const HEALTH_METRICS = [
   { key: "energy", label: "Energy", color: "#ff8a5b" },
   { key: "mood", label: "Mood", color: "#4fc3f7" },
   { key: "fitness", label: "Fitness", color: "#22c55e" },
   { key: "hydration", label: "Hydration", color: "#3b82f6" },
 ];
+
 const HEALTH_ACTIONS = [
   { id: "feed", label: "Feed", delta: { energy: 12, mood: 3, hydration: 2 } },
   { id: "water", label: "Water", delta: { hydration: 16, mood: 2 } },
   { id: "play", label: "Play", delta: { mood: 10, fitness: 4, energy: -5 } },
   { id: "rest", label: "Rest", delta: { energy: 9, mood: 5 } },
 ];
-const ESSENTIAL_ANIMATION_NAMES = ["Idle", "Walk", "Run", "Jump", "Survey"];
-const MAX_VISIBLE_ANIMATIONS = 4;
+
+const PROFILE_STORAGE_KEY = "ar_pet_profiles_v2";
+const DEFAULT_PET_PROFILES = {
+  dog: {
+    name: "Bolt",
+    age: 4,
+    voiceStyle: "playful",
+    storySeed: "ชอบวิ่งในสวนและเฝ้าบ้าน",
+  },
+  cat: {
+    name: "Luna",
+    age: 3,
+    voiceStyle: "gentle",
+    storySeed: "ชอบนอนอาบแดดและเดินสำรวจบ้าน",
+  },
+};
+
+const VOICE_STYLES = [
+  {
+    id: "playful",
+    label: "Playful",
+    dogVoice: "โฮ่ง! โฮ่ง! พร้อมลุย",
+    catVoice: "เหมียว~ มาเล่นกัน",
+    playbackRate: 1.08,
+  },
+  {
+    id: "gentle",
+    label: "Gentle",
+    dogVoice: "โฮ่ง... อย่างสุภาพ",
+    catVoice: "เหมียว... อย่างนุ่มนวล",
+    playbackRate: 0.95,
+  },
+  {
+    id: "guardian",
+    label: "Guardian",
+    dogVoice: "โฮ่ง! พื้นที่นี้ปลอดภัย",
+    catVoice: "เมี้ยว! คุมพื้นที่แล้ว",
+    playbackRate: 1.02,
+  },
+];
+const VOICE_STYLE_IDS = new Set(VOICE_STYLES.map((style) => style.id));
+
+const ANIMATION_PRIORITY = ["Idle", "Walk", "Run", "Jump", "Survey"];
+const MAX_VISIBLE_ANIMATIONS = 3;
+const ANIMATION_MODES = {
+  MANUAL: "manual",
+  AUTO: "auto",
+};
+const ANIMATION_KEEPALIVE_MS = 500;
+const ANIMATION_AUTO_STEP_MS = 3200;
 const SENSOR_POLL_MS = 3000;
 const SENSOR_STALE_MS = 15000;
-
-function clampMetric(value) {
-  return Math.max(0, Math.min(100, value));
-}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function clampMetric(value) {
+  return clamp(value, 0, 100);
+}
+
 function blendMetric(current, target, weight) {
   return current + (target - current) * weight;
+}
+
+function formatSensorTime(timestamp) {
+  if (!timestamp) return "No live data";
+  const deltaSec = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (deltaSec < 3) return "Updated just now";
+  return `Updated ${deltaSec}s ago`;
+}
+
+function formatAnimationLabel(animationName) {
+  if (!animationName) return "";
+  const cleaned = animationName
+    .split(/[|:/]/)
+    .pop()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > 18 ? `${cleaned.slice(0, 18)}...` : cleaned;
+}
+
+function getHealthDeltaFromAnimation(animationName) {
+  const name = (animationName || "").toLowerCase();
+
+  if (
+    name.includes("run") ||
+    name.includes("jump") ||
+    name.includes("attack") ||
+    name.includes("gallop")
+  ) {
+    return { energy: -2.4, mood: 0.7, fitness: 1.3, hydration: -1.1 };
+  }
+
+  if (name.includes("walk") || name.includes("survey")) {
+    return { energy: -1.3, mood: 0.5, fitness: 0.8, hydration: -0.6 };
+  }
+
+  if (name.includes("idle") || name.includes("rest") || name.includes("sleep")) {
+    return { energy: 1.0, mood: 0.3, fitness: 0.1, hydration: -0.2 };
+  }
+
+  return { energy: -0.6, mood: 0.2, fitness: 0.4, hydration: -0.4 };
 }
 
 function mapSensorReadingToHealth(reading) {
@@ -124,80 +177,70 @@ function mapSensorReadingToHealth(reading) {
   };
 }
 
-function formatSensorTime(timestamp) {
-  if (!timestamp) return "No live data";
-  const deltaSec = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (deltaSec < 3) return "Updated just now";
-  return `Updated ${deltaSec}s ago`;
-}
+function orderAnimations(rawAnimations) {
+  const unique = [...new Set((rawAnimations || []).filter(Boolean))];
+  const byLower = new Map(unique.map((name) => [name.toLowerCase(), name]));
 
-function getHealthDeltaFromAnimation(animationName) {
-  const name = (animationName || "").toLowerCase();
-
-  if (
-    name.includes("run") ||
-    name.includes("jump") ||
-    name.includes("attack") ||
-    name.includes("gallop")
-  ) {
-    return { energy: -2.6, mood: 0.8, fitness: 1.3, hydration: -1.1 };
-  }
-
-  if (name.includes("walk") || name.includes("survey")) {
-    return { energy: -1.4, mood: 0.5, fitness: 0.9, hydration: -0.7 };
-  }
-
-  if (name.includes("idle") || name.includes("rest") || name.includes("sleep")) {
-    return { energy: 1.2, mood: 0.3, fitness: 0.1, hydration: -0.2 };
-  }
-
-  return { energy: -0.7, mood: 0.2, fitness: 0.4, hydration: -0.4 };
-}
-
-function orderAnimations(animations) {
-  const unique = [...new Set(animations.filter(Boolean))];
-  const lowerToOriginal = new Map(
-    unique.map((animation) => [animation.toLowerCase(), animation]),
-  );
-
-  const preferred = PREFERRED_ANIMATIONS.map((name) =>
-    lowerToOriginal.get(name.toLowerCase()),
+  const prioritized = ANIMATION_PRIORITY.map((name) =>
+    byLower.get(name.toLowerCase()),
   ).filter(Boolean);
 
-  const preferredSet = new Set(preferred.map((name) => name.toLowerCase()));
-  const extras = unique.filter((name) => !preferredSet.has(name.toLowerCase()));
+  const used = new Set(prioritized.map((name) => name.toLowerCase()));
+  const extras = unique.filter((name) => !used.has(name.toLowerCase()));
 
-  return [...preferred, ...extras];
+  return [...prioritized, ...extras];
 }
 
-function pickEssentialAnimations(animations) {
-  const normalizedMap = new Map(
-    animations.map((name) => [name.toLowerCase(), name]),
+function pickVisibleAnimations(animations) {
+  if (!animations.length) return [];
+  return animations.slice(0, MAX_VISIBLE_ANIMATIONS);
+}
+
+function findAnimationByKeywords(animations, keywords) {
+  return (
+    animations.find((name) =>
+      keywords.some((keyword) => name.toLowerCase().includes(keyword)),
+    ) || ""
   );
+}
 
-  const essentials = ESSENTIAL_ANIMATION_NAMES.map((name) =>
-    normalizedMap.get(name.toLowerCase()),
-  ).filter(Boolean);
+function pickAutoAnimation(animations, { healthScore, isDogSensorMode, isSensorFresh }) {
+  if (!animations.length) return "";
 
-  if (essentials.length > 0) {
-    return essentials.slice(0, MAX_VISIBLE_ANIMATIONS);
+  const active = findAnimationByKeywords(animations, [
+    "run",
+    "walk",
+    "jump",
+    "gallop",
+    "survey",
+  ]);
+  const rest = findAnimationByKeywords(animations, ["idle", "rest", "sleep"]);
+  const stable = findAnimationByKeywords(animations, ["walk", "survey", "idle"]);
+
+  if (healthScore >= 78 && (!isDogSensorMode || isSensorFresh)) {
+    return active || stable || animations[0];
   }
 
-  return animations.slice(0, Math.min(3, animations.length));
+  if (healthScore <= 55) {
+    return rest || stable || animations[0];
+  }
+
+  return stable || active || rest || animations[0];
 }
 
 function pickArMotionAnimation(animations, fallbackAnimation = "") {
-  if (!Array.isArray(animations) || animations.length === 0) {
-    return fallbackAnimation || "";
-  }
+  if (!animations.length) return fallbackAnimation;
 
-  const movementKeywords = ["run", "walk", "jump", "gallop", "trot", "attack"];
-  const motion =
-    animations.find((name) =>
-      movementKeywords.some((keyword) => name.toLowerCase().includes(keyword)),
-    ) || "";
-
-  return motion || fallbackAnimation || animations[0] || "";
+  return (
+    findAnimationByKeywords(animations, [
+      "run",
+      "walk",
+      "jump",
+      "gallop",
+      "attack",
+      "survey",
+    ]) || fallbackAnimation || animations[0]
+  );
 }
 
 function normalizeProfilesFromStorage(input) {
@@ -217,8 +260,9 @@ function normalizeProfilesFromStorage(input) {
           : nextProfiles[petId].name,
       age: Number.isFinite(age) ? clamp(Math.round(age), 0, 30) : nextProfiles[petId].age,
       voiceStyle:
-        typeof profile.voiceStyle === "string" && profile.voiceStyle.trim()
-          ? profile.voiceStyle
+        typeof profile.voiceStyle === "string" &&
+        VOICE_STYLE_IDS.has(profile.voiceStyle.trim())
+          ? profile.voiceStyle.trim()
           : nextProfiles[petId].voiceStyle,
       storySeed:
         typeof profile.storySeed === "string"
@@ -230,142 +274,15 @@ function normalizeProfilesFromStorage(input) {
   return nextProfiles;
 }
 
-function getPrimaryAnimationByKeywords(animations, keywords) {
-  return (
-    animations.find((name) =>
-      keywords.some((keyword) => name.toLowerCase().includes(keyword)),
-    ) || ""
-  );
-}
-
-function createAvatarDataUrl({ petName, petLabel, healthScore, healthTone }) {
-  const initials = (petName || petLabel)
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((chunk) => chunk[0])
-    .join("")
-    .toUpperCase();
-
-  const toneColorMap = {
-    excellent: "#22c55e",
-    stable: "#2563eb",
-    care: "#f59e0b",
-    critical: "#ef4444",
-  };
-  const toneColor = toneColorMap[healthTone] ?? "#2563eb";
-  const background = petLabel === "Dog" ? "#fde68a" : "#bae6fd";
-  const safeName = petName.replace(/[<>&"]/g, "");
-  const safeLabel = petLabel.replace(/[<>&"]/g, "");
-
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 360' role='img' aria-label='AI avatar'>
-    <defs>
-      <linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'>
-        <stop offset='0%' stop-color='${background}' />
-        <stop offset='100%' stop-color='#ffffff' />
-      </linearGradient>
-    </defs>
-    <rect x='0' y='0' width='360' height='360' rx='42' fill='url(#bg)' />
-    <circle cx='180' cy='150' r='84' fill='${toneColor}' opacity='0.15' />
-    <circle cx='180' cy='150' r='72' fill='white' />
-    <text x='180' y='172' text-anchor='middle' font-family='Arial, sans-serif' font-size='58' font-weight='700' fill='${toneColor}'>${initials || "AI"}</text>
-    <text x='180' y='262' text-anchor='middle' font-family='Arial, sans-serif' font-size='24' font-weight='700' fill='#172032'>${safeName || safeLabel}</text>
-    <text x='180' y='294' text-anchor='middle' font-family='Arial, sans-serif' font-size='18' fill='#4f5d73'>Health ${healthScore}/100</text>
-  </svg>`;
-
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function buildConnectedAiProfile({
-  profile,
-  activePet,
-  healthScore,
-  healthStatus,
-  activeAnimation,
-  sensorSnapshot,
-  isSensorFresh,
-  draftVersion,
-}) {
-  const voiceStyle =
-    VOICE_STYLES.find((item) => item.id === profile.voiceStyle) ?? VOICE_STYLES[0];
-  const petName = profile.name?.trim() || activePet.label;
-  const age = clamp(Math.round(Number(profile.age) || 0), 0, 30);
-
-  const ageStage =
-    age <= 1
-      ? "วัยเด็ก"
-      : age <= 6
-        ? "วัยกำลังแข็งแรง"
-        : age <= 11
-          ? "วัยผู้ใหญ่"
-          : "วัย senior";
-
-  const sensorLine =
-    activePet.id === "dog" && sensorSnapshot
-      ? `HR ${sensorSnapshot.heartRate ?? "--"} bpm, Temp ${sensorSnapshot.temperatureC ?? "--"}C`
-      : "ยังไม่มีค่าเซ็นเซอร์สด";
-
-  const temperament =
-    healthScore >= 85
-      ? "มั่นใจ กระตือรือร้น และพร้อมเรียนรู้คำสั่งใหม่"
-      : healthScore >= 70
-        ? "สมดุล อารมณ์นิ่ง และตอบสนองดี"
-        : healthScore >= 50
-          ? "ต้องการการดูแลเพิ่ม และควรลดกิจกรรมหนัก"
-          : "อ่อนล้า ควรพักและติดตามอาการอย่างใกล้ชิด";
-
-  const voiceLine = activePet.id === "dog" ? voiceStyle.dogBark : voiceStyle.catVoice;
-  const movementLine = activeAnimation
-    ? `ตอนนี้กำลังทำท่า ${activeAnimation}`
-    : "ยังไม่มีท่าแอนิเมชันที่กำลังเล่น";
-  const sensorStateLine =
-    activePet.id === "dog"
-      ? isSensorFresh
-        ? "เซ็นเซอร์สดและกำลังอัปเดต"
-        : "เซ็นเซอร์ยังไม่สด"
-      : "โหมดเซ็นเซอร์เน้นเฉพาะสุนัข";
-  const storySeed = profile.storySeed?.trim();
-  const narrativeFlavors = [
-    "เช้านี้เริ่มวันอย่างสดใส",
-    "ช่วงบ่ายมีพลังสำหรับการฝึก",
-    "ช่วงเย็นเหมาะกับกิจกรรมที่สงบ",
-  ];
-  const narrativeLead =
-    narrativeFlavors[Math.abs(draftVersion || 0) % narrativeFlavors.length];
-  const story = `${narrativeLead}. ${petName} (${ageStage}) มีบุคลิกแบบ ${temperament}. ${movementLine}. ${sensorStateLine} (${sensorLine}). ${storySeed ? `เรื่องราว: ${storySeed}.` : ""} AI แนะนำให้จัดกิจกรรมที่บาลานซ์กับค่า Health ${healthScore}/100 (${healthStatus.label}).`;
-
-  const recommendedAnimation = healthScore >= 78 ? "active" : healthScore <= 55 ? "rest" : "steady";
-  const aiMotionTip =
-    recommendedAnimation === "active"
-      ? "แนะนำใช้ท่าที่เคลื่อนไหว เช่น Walk/Run"
-      : recommendedAnimation === "rest"
-        ? "แนะนำใช้ท่าพัก เช่น Idle"
-        : "แนะนำใช้ท่าคงที่ เช่น Walk หรือ Survey";
-
-  return {
-    voiceStyle,
-    petName,
-    age,
-    temperament,
-    story,
-    voiceLine,
-    avatarDataUrl: createAvatarDataUrl({
-      petName,
-      petLabel: activePet.label,
-      healthScore,
-      healthTone: healthStatus.tone,
-    }),
-    recommendedAnimation,
-    aiMotionTip,
-  };
-}
-
 export default function Home() {
   const viewerRef = useRef(null);
   const audioRef = useRef(null);
-  const arKeepAliveTimeoutsRef = useRef([]);
-  const animationKeepAliveIntervalRef = useRef(0);
+  const arTimeoutsRef = useRef([]);
+  const animationKeepAliveRef = useRef(0);
+  const availableAnimationsRef = useRef([]);
+  const activeAnimationRef = useRef("");
+  const isAnimationPausedRef = useRef(false);
+  const runAnimationRef = useRef(() => {});
   const cameraTweenFrameRef = useRef(0);
   const cameraTourFrameRef = useRef(0);
   const cameraTourLastTimeRef = useRef(0);
@@ -378,28 +295,42 @@ export default function Home() {
   const [isClient, setIsClient] = useState(false);
   const [activePetId, setActivePetId] = useState(PETS[0].id);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
+  const [modelError, setModelError] = useState("");
   const [availableAnimations, setAvailableAnimations] = useState([]);
   const [activeAnimation, setActiveAnimation] = useState("");
+  const [animationMode, setAnimationMode] = useState(ANIMATION_MODES.MANUAL);
+  const [animationSpeed, setAnimationSpeed] = useState(1);
+  const [isAnimationPaused, setIsAnimationPaused] = useState(false);
   const [isPlayingSound, setIsPlayingSound] = useState(false);
-  const [health, setHealth] = useState({
-    ...PET_BASE_HEALTH[PETS[0].id],
-  });
+
+  const [health, setHealth] = useState({ ...PET_BASE_HEALTH[PETS[0].id] });
   const [sensorSnapshot, setSensorSnapshot] = useState(null);
   const [sensorError, setSensorError] = useState("");
   const [isSensorSyncEnabled, setIsSensorSyncEnabled] = useState(true);
   const [sensorClock, setSensorClock] = useState(Date.now());
-  const [activeCameraPreset, setActiveCameraPreset] = useState(
-    CAMERA_PRESETS[0].id,
-  );
+
+  const [activeCameraPreset, setActiveCameraPreset] = useState(CAMERA_PRESETS[0].id);
   const [isCameraTouring, setIsCameraTouring] = useState(false);
   const [isArPresenting, setIsArPresenting] = useState(false);
+
   const [petProfiles, setPetProfiles] = useState(DEFAULT_PET_PROFILES);
-  const [aiDraftVersion, setAiDraftVersion] = useState(0);
 
   const activePet = useMemo(
     () => PETS.find((pet) => pet.id === activePetId) ?? PETS[0],
     [activePetId],
   );
+
+  const activeProfile = useMemo(
+    () => petProfiles[activePetId] ?? DEFAULT_PET_PROFILES[activePetId],
+    [activePetId, petProfiles],
+  );
+
+  const activeVoiceStyle = useMemo(
+    () =>
+      VOICE_STYLES.find((item) => item.id === activeProfile.voiceStyle) ?? VOICE_STYLES[0],
+    [activeProfile.voiceStyle],
+  );
+
   const healthScore = useMemo(
     () =>
       Math.round(
@@ -410,17 +341,21 @@ export default function Home() {
       ),
     [health],
   );
+
   const healthStatus = useMemo(() => {
     if (healthScore >= 85) return { label: "Excellent", tone: "excellent" };
     if (healthScore >= 70) return { label: "Stable", tone: "stable" };
     if (healthScore >= 50) return { label: "Needs Care", tone: "care" };
     return { label: "Critical", tone: "critical" };
   }, [healthScore]);
+
   const isDogSensorMode = activePetId === "dog" && isSensorSyncEnabled;
+
   const isSensorFresh = useMemo(() => {
     if (!sensorSnapshot?.timestamp) return false;
     return Date.now() - sensorSnapshot.timestamp <= SENSOR_STALE_MS;
   }, [sensorClock, sensorSnapshot]);
+
   const sensorLabel = useMemo(() => {
     if (!isSensorSyncEnabled) return "Sensor Sync Off";
     if (sensorError) return "Sensor Error";
@@ -428,55 +363,72 @@ export default function Home() {
     if (sensorSnapshot?.timestamp) return "Sensor Stale";
     return "Waiting Sensor Data";
   }, [isSensorFresh, isSensorSyncEnabled, sensorError, sensorSnapshot]);
-  const activeProfile = useMemo(
-    () => petProfiles[activePetId] ?? DEFAULT_PET_PROFILES[activePetId],
-    [activePetId, petProfiles],
-  );
-  const aiProfile = useMemo(
+
+  const animationStatusLabel = useMemo(() => {
+    if (!activeAnimation) return "No animation";
+
+    const playState = isAnimationPaused ? "Paused" : "Playing";
+    const modeState =
+      animationMode === ANIMATION_MODES.AUTO ? "Auto Mode" : "Manual Mode";
+    return `${playState} • ${modeState}`;
+  }, [activeAnimation, animationMode, isAnimationPaused]);
+
+  const autoSuggestedAnimation = useMemo(
     () =>
-      buildConnectedAiProfile({
-        profile: activeProfile,
-        activePet,
+      pickAutoAnimation(availableAnimations, {
         healthScore,
-        healthStatus,
-        activeAnimation,
-        sensorSnapshot,
+        isDogSensorMode,
         isSensorFresh,
-        draftVersion: aiDraftVersion,
       }),
-    [
-      activeAnimation,
-      activePet,
-      activeProfile,
-      aiDraftVersion,
-      healthScore,
-      healthStatus,
-      isSensorFresh,
-      sensorSnapshot,
-    ],
+    [availableAnimations, healthScore, isDogSensorMode, isSensorFresh],
   );
-  const preferredAiAnimation = useMemo(() => {
-    if (!availableAnimations.length) return "";
-    if (aiProfile.recommendedAnimation === "rest") {
-      return getPrimaryAnimationByKeywords(availableAnimations, ["idle", "rest", "sleep"]);
-    }
-    if (aiProfile.recommendedAnimation === "active") {
-      return getPrimaryAnimationByKeywords(availableAnimations, ["run", "walk", "jump"]);
-    }
-    return getPrimaryAnimationByKeywords(availableAnimations, ["walk", "survey", "idle"]);
-  }, [aiProfile.recommendedAnimation, availableAnimations]);
-  const preferredArMotionAnimation = useMemo(
-    () =>
-      pickArMotionAnimation(
-        availableAnimations,
-        preferredAiAnimation || activeAnimation,
-      ),
-    [activeAnimation, availableAnimations, preferredAiAnimation],
-  );
+
   const soundPlaybackRate = useMemo(() => {
-    const healthMod = healthScore >= 85 ? 1.05 : healthScore <= 55 ? 0.9 : 1;
-    return clamp(aiProfile.voiceStyle.playbackRate * healthMod, 0.72, 1.28);
-  }, [aiProfile.voiceStyle.playbackRate, healthScore]);
+    const healthMod = healthScore >= 85 ? 1.05 : healthScore <= 55 ? 0.92 : 1;
+    return clamp(activeVoiceStyle.playbackRate * healthMod, 0.72, 1.28);
+  }, [activeVoiceStyle.playbackRate, healthScore]);
+
+  const profileInsight = useMemo(() => {
+    const petName = activeProfile.name || activePet.label;
+    const age = clamp(Number(activeProfile.age) || 0, 0, 30);
+    const ageLabel = age <= 1 ? "วัยเด็ก" : age <= 7 ? "วัย active" : "วัยผู้ใหญ่";
+
+    const personality =
+      healthScore >= 85
+        ? "พลังสูง มั่นใจ และพร้อมทำกิจกรรม"
+        : healthScore >= 70
+          ? "นิ่ง สมดุล และโฟกัสดี"
+          : healthScore >= 50
+            ? "ต้องการดูแลเพิ่มและพักเป็นช่วง"
+            : "อ่อนล้า ควรเน้นพักและติดตามสัญญาณ";
+
+    const story = `${petName} (${ageLabel}) ชอบ ${activeProfile.storySeed}. ขณะนี้ท่าหลักคือ ${
+      activeAnimation || "Idle"
+    } และ Health อยู่ที่ ${healthScore}/100.`;
+
+    return {
+      petName,
+      age,
+      personality,
+      story,
+      voiceLine: activePet.id === "dog" ? activeVoiceStyle.dogVoice : activeVoiceStyle.catVoice,
+    };
+  }, [
+    activeAnimation,
+    activePet.id,
+    activePet.label,
+    activeProfile.age,
+    activeProfile.name,
+    activeProfile.storySeed,
+    activeVoiceStyle.catVoice,
+    activeVoiceStyle.dogVoice,
+    healthScore,
+  ]);
+
+  const clearArTimeouts = useCallback(() => {
+    arTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    arTimeoutsRef.current = [];
+  }, []);
 
   const stopSound = useCallback(() => {
     if (!audioRef.current) return;
@@ -485,74 +437,101 @@ export default function Home() {
     audioRef.current = null;
     setIsPlayingSound(false);
   }, []);
+
   const stopAnimationKeepAlive = useCallback(() => {
-    if (!animationKeepAliveIntervalRef.current) return;
-    clearInterval(animationKeepAliveIntervalRef.current);
-    animationKeepAliveIntervalRef.current = 0;
+    if (!animationKeepAliveRef.current) return;
+    clearInterval(animationKeepAliveRef.current);
+    animationKeepAliveRef.current = 0;
   }, []);
-  const ensureAnimationContinuity = useCallback(
-    (preferredAnimation) => {
+
+  const runAnimation = useCallback(
+    (requestedAnimation, options = {}) => {
       const viewer = viewerRef.current;
       if (!viewer) return;
 
-      const nextAnimation = preferredAnimation || activeAnimation || viewer.animationName;
-      if (!nextAnimation) return;
+      const targetAnimation = requestedAnimation || activeAnimation || viewer.animationName;
+      if (!targetAnimation) return;
+
+      const restart = Boolean(options.restart);
+      const manualSelection = Boolean(options.manualSelection);
 
       viewer.animationLoop = true;
-      if (viewer.animationName !== nextAnimation) {
-        viewer.animationName = nextAnimation;
+      if (viewer.animationName !== targetAnimation) {
+        viewer.animationName = targetAnimation;
       }
-      viewer.currentTime = 0;
+      if (typeof viewer.timeScale === "number") {
+        viewer.timeScale = animationSpeed;
+      }
+      if (restart) {
+        viewer.currentTime = 0;
+      }
+
       viewer.play();
-      setActiveAnimation(nextAnimation);
+      setActiveAnimation(targetAnimation);
+      setIsAnimationPaused(false);
+      if (manualSelection) {
+        setAnimationMode(ANIMATION_MODES.MANUAL);
+      }
     },
-    [activeAnimation],
+    [activeAnimation, animationSpeed],
   );
-  const clearArKeepAlive = useCallback(() => {
-    arKeepAliveTimeoutsRef.current.forEach((timerId) => clearTimeout(timerId));
-    arKeepAliveTimeoutsRef.current = [];
+
+  useEffect(() => {
+    availableAnimationsRef.current = availableAnimations;
+  }, [availableAnimations]);
+
+  useEffect(() => {
+    activeAnimationRef.current = activeAnimation;
+  }, [activeAnimation]);
+
+  useEffect(() => {
+    isAnimationPausedRef.current = isAnimationPaused;
+  }, [isAnimationPaused]);
+
+  useEffect(() => {
+    runAnimationRef.current = runAnimation;
+  }, [runAnimation]);
+
+  const pauseAnimation = useCallback(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    viewer.pause();
+    setIsAnimationPaused(true);
   }, []);
-  const forceAnimationInAr = useCallback(
-    (preferredAnimation) => {
-      const viewer = viewerRef.current;
-      if (!viewer) return;
 
-      const nextAnimation = preferredAnimation || activeAnimation;
-      if (!nextAnimation) return;
+  const resumeAnimation = useCallback(() => {
+    runAnimation(activeAnimation || availableAnimations[0], { restart: false });
+  }, [activeAnimation, availableAnimations, runAnimation]);
 
-      clearArKeepAlive();
+  const toggleAnimationPlayback = useCallback(() => {
+    if (isAnimationPaused) {
+      resumeAnimation();
+      return;
+    }
+    pauseAnimation();
+  }, [isAnimationPaused, pauseAnimation, resumeAnimation]);
 
-      [0, 260, 900, 1700].forEach((delay) => {
-        const timeoutId = setTimeout(() => {
-          ensureAnimationContinuity(nextAnimation);
-        }, delay);
-        arKeepAliveTimeoutsRef.current.push(timeoutId);
+  const cycleAnimation = useCallback(
+    (direction) => {
+      if (!availableAnimations.length) return;
+      const currentIndex = Math.max(0, availableAnimations.indexOf(activeAnimation));
+      const nextIndex =
+        (currentIndex + direction + availableAnimations.length) % availableAnimations.length;
+      runAnimation(availableAnimations[nextIndex], {
+        restart: true,
+        manualSelection: true,
       });
     },
-    [activeAnimation, clearArKeepAlive, ensureAnimationContinuity],
+    [activeAnimation, availableAnimations, runAnimation],
   );
-  const updateActiveProfile = useCallback(
-    (field, value) => {
-      setPetProfiles((prev) => {
-        const current = prev[activePetId] ?? DEFAULT_PET_PROFILES[activePetId];
-        let nextValue = value;
 
-        if (field === "age") {
-          const parsed = Number(value);
-          nextValue = Number.isFinite(parsed) ? clamp(Math.round(parsed), 0, 30) : 0;
-        }
+  const setCameraOrbit = useCallback((theta, phi, radius) => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
 
-        return {
-          ...prev,
-          [activePetId]: {
-            ...current,
-            [field]: nextValue,
-          },
-        };
-      });
-    },
-    [activePetId],
-  );
+    cameraOrbitRef.current = { theta, phi, radius };
+    viewer.cameraOrbit = `${theta.toFixed(2)}deg ${phi.toFixed(2)}deg ${radius.toFixed(2)}%`;
+  }, []);
 
   const stopCameraTween = useCallback(() => {
     if (!cameraTweenFrameRef.current) return;
@@ -567,17 +546,6 @@ export default function Home() {
     cameraTourLastTimeRef.current = 0;
   }, []);
 
-  const setCameraOrbit = useCallback((theta, phi, radius) => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
-    const nextOrbit = { theta, phi, radius };
-    cameraOrbitRef.current = nextOrbit;
-    viewer.cameraOrbit = `${theta.toFixed(2)}deg ${phi.toFixed(
-      2,
-    )}deg ${radius.toFixed(2)}%`;
-  }, []);
-
   const animateCameraTo = useCallback(
     ({ theta, phi, radius }, durationMs = 700) => {
       const viewer = viewerRef.current;
@@ -585,7 +553,6 @@ export default function Home() {
 
       stopCameraTween();
       const start = cameraOrbitRef.current;
-
       const deltaTheta = ((theta - start.theta + 540) % 360) - 180;
       const deltaPhi = phi - start.phi;
       const deltaRadius = radius - start.radius;
@@ -634,270 +601,53 @@ export default function Home() {
     [animateCameraTo, setCameraOrbit, stopCameraTour],
   );
 
-  useEffect(() => {
-    return () => {
-      stopSound();
-      stopAnimationKeepAlive();
-      stopCameraTween();
-      stopCameraTour();
-      clearArKeepAlive();
-    };
-  }, [
-    clearArKeepAlive,
-    stopAnimationKeepAlive,
-    stopCameraTour,
-    stopCameraTween,
-    stopSound,
-  ]);
+  const updateProfile = useCallback(
+    (field, value) => {
+      setPetProfiles((prev) => {
+        const current = prev[activePetId] ?? DEFAULT_PET_PROFILES[activePetId];
+        let nextValue = value;
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+        if (field === "age") {
+          if (value === "") {
+            return prev;
+          }
+          const parsed = Number(value);
+          if (!Number.isFinite(parsed)) {
+            return prev;
+          }
+          nextValue = clamp(Math.round(parsed), 0, 30);
+        }
 
-  useEffect(() => {
-    if (!isClient) return;
-
-    try {
-      const raw = window.localStorage.getItem(PROFILE_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      setPetProfiles(normalizeProfilesFromStorage(parsed));
-    } catch {
-      // Ignore malformed storage and continue with defaults.
-    }
-  }, [isClient]);
-
-  useEffect(() => {
-    if (!isClient) return;
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(petProfiles));
-  }, [isClient, petProfiles]);
-
-  useEffect(() => {
-    const timerId = setInterval(() => {
-      setSensorClock(Date.now());
-    }, 1000);
-
-    return () => {
-      clearInterval(timerId);
-    };
-  }, []);
-
-  useEffect(() => {
-    setIsLoadingModel(true);
-    setAvailableAnimations([]);
-    setActiveAnimation("");
-    setIsArPresenting(false);
-    setHealth({
-      ...(PET_BASE_HEALTH[activePetId] ?? PET_BASE_HEALTH[PETS[0].id]),
-    });
-    clearArKeepAlive();
-    stopSound();
-  }, [activePetId, clearArKeepAlive, stopSound]);
-
-  useEffect(() => {
-    if (!isClient || !isSensorSyncEnabled) return;
-
-    let isActive = true;
-
-    const pullSensorData = async () => {
-      try {
-        const response = await fetch("/api/health/live?petId=dog", {
-          cache: "no-store",
-        });
-        if (!response.ok) throw new Error("Sensor endpoint unavailable");
-
-        const payload = await response.json();
-        if (!isActive) return;
-
-        setSensorSnapshot(payload.reading ?? null);
-        setSensorError("");
-
-        if (isDogSensorMode && payload.reading) {
-          const mapped = mapSensorReadingToHealth(payload.reading);
-          if (mapped) {
-            setHealth((prev) => ({
-              energy: clampMetric(blendMetric(prev.energy, mapped.energy, 0.68)),
-              mood: clampMetric(blendMetric(prev.mood, mapped.mood, 0.68)),
-              fitness: clampMetric(blendMetric(prev.fitness, mapped.fitness, 0.68)),
-              hydration: clampMetric(
-                blendMetric(prev.hydration, mapped.hydration, 0.68),
-              ),
-            }));
+        if (field === "voiceStyle") {
+          if (!VOICE_STYLE_IDS.has(String(value))) {
+            return prev;
           }
         }
-      } catch {
-        if (!isActive) return;
-        setSensorError("Cannot pull live sensor data");
-      }
-    };
 
-    pullSensorData();
-    const intervalId = setInterval(pullSensorData, SENSOR_POLL_MS);
+        return {
+          ...prev,
+          [activePetId]: {
+            ...current,
+            [field]: nextValue,
+          },
+        };
+      });
+    },
+    [activePetId],
+  );
 
-    return () => {
-      isActive = false;
-      clearInterval(intervalId);
-    };
-  }, [isClient, isDogSensorMode, isSensorSyncEnabled]);
+  const playAnimation = useCallback(
+    (animationName) => {
+      if (!animationName) return;
+      runAnimation(animationName, { restart: true, manualSelection: true });
+    },
+    [runAnimation],
+  );
 
-  useEffect(() => {
-    const timerId = setInterval(() => {
-      if (isLoadingModel) return;
-      if (isDogSensorMode && isSensorFresh) return;
-
-      const delta = getHealthDeltaFromAnimation(activeAnimation);
-
-      setHealth((prev) => ({
-        energy: clampMetric(prev.energy + delta.energy),
-        mood: clampMetric(prev.mood + delta.mood),
-        fitness: clampMetric(prev.fitness + delta.fitness),
-        hydration: clampMetric(prev.hydration + delta.hydration),
-      }));
-    }, 2500);
-
-    return () => {
-      clearInterval(timerId);
-    };
-  }, [activeAnimation, isDogSensorMode, isLoadingModel, isSensorFresh]);
-
-  useEffect(() => {
-    if (isSensorSyncEnabled) return;
-    setSensorError("");
-  }, [isSensorSyncEnabled]);
-
-  useEffect(() => {
-    stopAnimationKeepAlive();
-    if (!isClient || !activeAnimation) return;
-
-    animationKeepAliveIntervalRef.current = setInterval(() => {
-      const viewer = viewerRef.current;
-      if (!viewer) return;
-
-      viewer.animationLoop = true;
-      if (viewer.animationName !== activeAnimation) {
-        viewer.animationName = activeAnimation;
-      }
-      if (viewer.paused) {
-        viewer.play();
-      }
-    }, 420);
-
-    return () => {
-      stopAnimationKeepAlive();
-    };
-  }, [activeAnimation, isClient, stopAnimationKeepAlive]);
-
-  useEffect(() => {
-    if (!isCameraTouring) {
-      stopCameraTour();
-      return;
-    }
-
-    stopCameraTween();
-
-    const tick = (time) => {
-      if (!cameraTourLastTimeRef.current) {
-        cameraTourLastTimeRef.current = time;
-      }
-
-      const deltaSeconds = (time - cameraTourLastTimeRef.current) / 1000;
-      cameraTourLastTimeRef.current = time;
-
-      const current = cameraOrbitRef.current;
-      setCameraOrbit(current.theta + 24 * deltaSeconds, current.phi, current.radius);
-      cameraTourFrameRef.current = requestAnimationFrame(tick);
-    };
-
-    cameraTourFrameRef.current = requestAnimationFrame(tick);
-
-    return () => {
-      stopCameraTour();
-    };
-  }, [isCameraTouring, setCameraOrbit, stopCameraTour, stopCameraTween]);
-
-  useEffect(() => {
-    if (!isClient) return;
-
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
-    const handleModelLoad = () => {
-      const rawAnimations = Array.isArray(viewer.availableAnimations)
-        ? viewer.availableAnimations
-        : [];
-      const orderedAnimations = orderAnimations(rawAnimations);
-      const essentialAnimations = pickEssentialAnimations(orderedAnimations);
-
-      setAvailableAnimations(essentialAnimations);
-
-      if (essentialAnimations.length > 0) {
-        const nextAnimation = essentialAnimations[0];
-        ensureAnimationContinuity(nextAnimation);
-      } else {
-        setActiveAnimation("");
-      }
-
-      const orbit = cameraOrbitRef.current;
-      setCameraOrbit(orbit.theta, orbit.phi, orbit.radius);
-      setIsLoadingModel(false);
-    };
-
-    const handleModelError = () => {
-      setIsLoadingModel(false);
-      setAvailableAnimations([]);
-      setActiveAnimation("");
-    };
-    const handleArStatus = (event) => {
-      const status = event?.detail?.status;
-
-      if (status === "session-started") {
-        setIsArPresenting(true);
-        forceAnimationInAr(preferredArMotionAnimation || activeAnimation);
-        return;
-      }
-
-      if (
-        status === "not-presenting" ||
-        status === "session-ended" ||
-        status === "failed"
-      ) {
-        setIsArPresenting(false);
-        clearArKeepAlive();
-      }
-    };
-    const handleAnimationFinished = () => {
-      ensureAnimationContinuity(activeAnimation || viewer.animationName);
-    };
-
-    viewer.addEventListener("load", handleModelLoad);
-    viewer.addEventListener("error", handleModelError);
-    viewer.addEventListener("ar-status", handleArStatus);
-    viewer.addEventListener("finished", handleAnimationFinished);
-
-    if (viewer.loaded) {
-      handleModelLoad();
-    }
-
-    return () => {
-      viewer.removeEventListener("load", handleModelLoad);
-      viewer.removeEventListener("error", handleModelError);
-      viewer.removeEventListener("ar-status", handleArStatus);
-      viewer.removeEventListener("finished", handleAnimationFinished);
-    };
-  }, [
-    activeAnimation,
-    clearArKeepAlive,
-    ensureAnimationContinuity,
-    forceAnimationInAr,
-    isClient,
-    preferredArMotionAnimation,
-    setCameraOrbit,
-  ]);
-
-  const playAnimation = useCallback((animationName) => {
-    if (!viewerRef.current || !animationName) return;
-    ensureAnimationContinuity(animationName);
-  }, [ensureAnimationContinuity]);
+  const applyAutoSuggestionNow = useCallback(() => {
+    if (!autoSuggestedAnimation) return;
+    runAnimation(autoSuggestedAnimation, { restart: false });
+  }, [autoSuggestedAnimation, runAnimation]);
 
   const toggleSound = useCallback(async () => {
     if (isPlayingSound) {
@@ -930,9 +680,6 @@ export default function Home() {
     }
   }, [activePet.id, activePet.soundPath, isPlayingSound, soundPlaybackRate, stopSound]);
 
-  const toggleCameraTour = useCallback(() => {
-    setIsCameraTouring((prev) => !prev);
-  }, []);
   const applyHealthAction = useCallback((actionId) => {
     const action = HEALTH_ACTIONS.find((item) => item.id === actionId);
     if (!action) return;
@@ -944,46 +691,343 @@ export default function Home() {
       hydration: clampMetric(prev.hydration + (action.delta.hydration ?? 0)),
     }));
   }, []);
-  const ensureAnimationIsPlaying = useCallback(
-    (preferredAnimation) => {
-      ensureAnimationContinuity(preferredAnimation || activeAnimation);
-    },
-    [activeAnimation, ensureAnimationContinuity],
-  );
-  const applyAiAnimationSuggestion = useCallback(() => {
-    if (!preferredAiAnimation) return;
-    playAnimation(preferredAiAnimation);
-  }, [playAnimation, preferredAiAnimation]);
+
   const openArCamera = useCallback(async () => {
     const viewer = viewerRef.current;
-    if (!viewer) return;
+    if (!viewer || isLoadingModel || modelError) return;
 
-    const motionAnimation =
-      preferredArMotionAnimation || preferredAiAnimation || activeAnimation;
+    const arAnimation = pickArMotionAnimation(
+      availableAnimations,
+      activeAnimation || autoSuggestedAnimation,
+    );
+    runAnimation(arAnimation, { restart: false });
 
-    ensureAnimationIsPlaying(motionAnimation);
-    forceAnimationInAr(motionAnimation);
     try {
       await viewer.activateAR();
     } catch {
-      // No-op: unsupported browsers simply stay in 3D mode.
+      // Unsupported browsers remain in 3D mode.
     }
   }, [
     activeAnimation,
-    ensureAnimationIsPlaying,
-    forceAnimationInAr,
-    preferredAiAnimation,
-    preferredArMotionAnimation,
+    autoSuggestedAnimation,
+    availableAnimations,
+    isLoadingModel,
+    modelError,
+    runAnimation,
   ]);
+
+  useEffect(() => {
+    return () => {
+      stopSound();
+      stopAnimationKeepAlive();
+      stopCameraTween();
+      stopCameraTour();
+      clearArTimeouts();
+    };
+  }, [clearArTimeouts, stopAnimationKeepAlive, stopCameraTour, stopCameraTween, stopSound]);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+
+    try {
+      const raw = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      setPetProfiles(normalizeProfilesFromStorage(parsed));
+    } catch {
+      // Ignore invalid profile JSON and keep defaults.
+    }
+  }, [isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(petProfiles));
+  }, [isClient, petProfiles]);
+
+  useEffect(() => {
+    const timerId = setInterval(() => {
+      setSensorClock(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(timerId);
+    };
+  }, []);
+
+  useEffect(() => {
+    setIsLoadingModel(true);
+    setModelError("");
+    setAvailableAnimations([]);
+    setActiveAnimation("");
+    setAnimationMode(ANIMATION_MODES.MANUAL);
+    setAnimationSpeed(1);
+    setIsAnimationPaused(false);
+    setIsArPresenting(false);
+    setHealth({ ...(PET_BASE_HEALTH[activePetId] ?? PET_BASE_HEALTH[PETS[0].id]) });
+    clearArTimeouts();
+    stopSound();
+  }, [activePetId, clearArTimeouts, stopSound]);
+
+  useEffect(() => {
+    if (!isClient || !isSensorSyncEnabled) return;
+
+    let isActive = true;
+
+    const pullSensorData = async () => {
+      try {
+        const response = await fetch("/api/health/live?petId=dog", { cache: "no-store" });
+        if (!response.ok) throw new Error("Sensor endpoint unavailable");
+
+        const payload = await response.json();
+        if (!isActive) return;
+
+        setSensorSnapshot(payload.reading ?? null);
+        setSensorError("");
+
+        if (isDogSensorMode && payload.reading) {
+          const mapped = mapSensorReadingToHealth(payload.reading);
+          if (mapped) {
+            setHealth((prev) => ({
+              energy: clampMetric(blendMetric(prev.energy, mapped.energy, 0.68)),
+              mood: clampMetric(blendMetric(prev.mood, mapped.mood, 0.68)),
+              fitness: clampMetric(blendMetric(prev.fitness, mapped.fitness, 0.68)),
+              hydration: clampMetric(blendMetric(prev.hydration, mapped.hydration, 0.68)),
+            }));
+          }
+        }
+      } catch {
+        if (!isActive) return;
+        setSensorError("Cannot pull live sensor data");
+      }
+    };
+
+    pullSensorData();
+    const intervalId = setInterval(pullSensorData, SENSOR_POLL_MS);
+
+    return () => {
+      isActive = false;
+      clearInterval(intervalId);
+    };
+  }, [isClient, isDogSensorMode, isSensorSyncEnabled]);
+
+  useEffect(() => {
+    const timerId = setInterval(() => {
+      if (isLoadingModel) return;
+      if (!activeAnimation) return;
+      if (isAnimationPaused) return;
+      if (isDogSensorMode && isSensorFresh) return;
+
+      const delta = getHealthDeltaFromAnimation(activeAnimation);
+
+      setHealth((prev) => ({
+        energy: clampMetric(prev.energy + delta.energy),
+        mood: clampMetric(prev.mood + delta.mood),
+        fitness: clampMetric(prev.fitness + delta.fitness),
+        hydration: clampMetric(prev.hydration + delta.hydration),
+      }));
+    }, 2500);
+
+    return () => {
+      clearInterval(timerId);
+    };
+  }, [activeAnimation, isAnimationPaused, isDogSensorMode, isLoadingModel, isSensorFresh]);
+
+  useEffect(() => {
+    if (isSensorSyncEnabled) return;
+    setSensorError("");
+  }, [isSensorSyncEnabled]);
+
+  useEffect(() => {
+    stopAnimationKeepAlive();
+    if (!isClient || !activeAnimation || isAnimationPaused) return;
+
+    animationKeepAliveRef.current = setInterval(() => {
+      const viewer = viewerRef.current;
+      if (!viewer) return;
+
+      viewer.animationLoop = true;
+      if (typeof viewer.timeScale === "number") {
+        viewer.timeScale = animationSpeed;
+      }
+      if (viewer.animationName !== activeAnimation) {
+        viewer.animationName = activeAnimation;
+      }
+      if (viewer.paused) {
+        viewer.play();
+      }
+    }, ANIMATION_KEEPALIVE_MS);
+
+    return () => {
+      stopAnimationKeepAlive();
+    };
+  }, [activeAnimation, animationSpeed, isAnimationPaused, isClient, stopAnimationKeepAlive]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    if (animationMode !== ANIMATION_MODES.AUTO) return;
+    if (isAnimationPaused) return;
+    if (!availableAnimations.length) return;
+
+    const playAuto = () => {
+      const next = pickAutoAnimation(availableAnimations, {
+        healthScore,
+        isDogSensorMode,
+        isSensorFresh,
+      });
+      if (!next) return;
+      runAnimation(next, { restart: false });
+    };
+
+    playAuto();
+    const intervalId = setInterval(playAuto, ANIMATION_AUTO_STEP_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [
+    animationMode,
+    availableAnimations,
+    healthScore,
+    isAnimationPaused,
+    isClient,
+    isDogSensorMode,
+    isSensorFresh,
+    runAnimation,
+  ]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    if (typeof viewer.timeScale === "number") {
+      viewer.timeScale = animationSpeed;
+    }
+  }, [animationSpeed, isClient]);
+
+  useEffect(() => {
+    if (!isCameraTouring) {
+      stopCameraTour();
+      return;
+    }
+
+    stopCameraTween();
+
+    const tick = (time) => {
+      if (!cameraTourLastTimeRef.current) {
+        cameraTourLastTimeRef.current = time;
+      }
+
+      const deltaSec = (time - cameraTourLastTimeRef.current) / 1000;
+      cameraTourLastTimeRef.current = time;
+
+      const current = cameraOrbitRef.current;
+      setCameraOrbit(current.theta + 24 * deltaSec, current.phi, current.radius);
+      cameraTourFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    cameraTourFrameRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      stopCameraTour();
+    };
+  }, [isCameraTouring, setCameraOrbit, stopCameraTour, stopCameraTween]);
+
+  useEffect(() => {
+    if (!isClient) return;
+
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    const handleModelLoad = () => {
+      setModelError("");
+      const rawAnimations = Array.isArray(viewer.availableAnimations)
+        ? viewer.availableAnimations
+        : [];
+
+      const ordered = orderAnimations(rawAnimations);
+      const visible = pickVisibleAnimations(ordered);
+
+      setAvailableAnimations(visible);
+      if (visible.length > 0) {
+        runAnimationRef.current(visible[0], { restart: false });
+      } else {
+        setActiveAnimation("");
+      }
+
+      const orbit = cameraOrbitRef.current;
+      setCameraOrbit(orbit.theta, orbit.phi, orbit.radius);
+      setIsLoadingModel(false);
+    };
+
+    const handleModelError = () => {
+      setIsLoadingModel(false);
+      setAvailableAnimations([]);
+      setActiveAnimation("");
+      setModelError("Model failed to load. Check /public/models and try again.");
+    };
+
+    const handleArStatus = (event) => {
+      const status = event?.detail?.status;
+
+      if (status === "session-started") {
+        setIsArPresenting(true);
+        const target = pickArMotionAnimation(
+          availableAnimationsRef.current,
+          activeAnimationRef.current,
+        );
+        clearArTimeouts();
+
+        [120, 600, 1500].forEach((delay, index) => {
+          const timeoutId = setTimeout(() => {
+            runAnimationRef.current(target, { restart: index === 0 });
+          }, delay);
+          arTimeoutsRef.current.push(timeoutId);
+        });
+        return;
+      }
+
+      if (
+        status === "not-presenting" ||
+        status === "session-ended" ||
+        status === "failed"
+      ) {
+        setIsArPresenting(false);
+        clearArTimeouts();
+      }
+    };
+
+    const handleAnimationFinished = () => {
+      if (isAnimationPausedRef.current) return;
+      if (!viewer.animationName) return;
+      viewer.play();
+    };
+
+    viewer.addEventListener("load", handleModelLoad);
+    viewer.addEventListener("error", handleModelError);
+    viewer.addEventListener("ar-status", handleArStatus);
+    viewer.addEventListener("finished", handleAnimationFinished);
+
+    if (viewer.loaded) {
+      handleModelLoad();
+    }
+
+    return () => {
+      viewer.removeEventListener("load", handleModelLoad);
+      viewer.removeEventListener("error", handleModelError);
+      viewer.removeEventListener("ar-status", handleArStatus);
+      viewer.removeEventListener("finished", handleAnimationFinished);
+    };
+  }, [clearArTimeouts, isClient, setCameraOrbit]);
 
   return (
     <main className="page-shell">
       <section className="hero reveal reveal-1">
         <p className="eyebrow">WebXR Playground</p>
         <h1>AR Pet Studio</h1>
-        <p className="subtitle">
-          เลือกสัตว์ ดูโมเดล 3D/AR และติดตามสุขภาพในหน้าเดียว
-        </p>
+        <p className="subtitle">ระบบใหม่ที่รีเซ็ตให้เสถียรขึ้นสำหรับ AR + Animation + Health</p>
         <div className="quick-overview">
           <article className="quick-card">
             <p>Active Pet</p>
@@ -991,7 +1035,7 @@ export default function Home() {
           </article>
           <article className="quick-card">
             <p>Profile Name</p>
-            <strong>{aiProfile.petName}</strong>
+            <strong>{profileInsight.petName}</strong>
           </article>
           <article className="quick-card">
             <p>Health Score</p>
@@ -1006,15 +1050,15 @@ export default function Home() {
 
       {PETS.length > 1 && (
         <section className="panel reveal reveal-2">
-          <h2>Choose a pet</h2>
+          <h2>Choose A Pet</h2>
           <div className="pet-grid">
             {PETS.map((pet) => (
               <button
                 key={pet.id}
                 type="button"
-                className={`pet-card ${
-                  activePetId === pet.id ? "is-active" : ""
-                } accent-${pet.accent}`}
+                className={`pet-card ${activePetId === pet.id ? "is-active" : ""} accent-${
+                  pet.accent
+                }`}
                 onClick={() => setActivePetId(pet.id)}
                 aria-pressed={activePetId === pet.id}
               >
@@ -1028,28 +1072,18 @@ export default function Home() {
 
       <section className="panel reveal reveal-3">
         <div className="profile-head">
-          <h2>Connected Pet Profile</h2>
-          <button
-            type="button"
-            className="chip chip-soft"
-            onClick={() => setAiDraftVersion((prev) => prev + 1)}
-          >
-            AI Rewrite
-          </button>
+          <h2>Pet Profile</h2>
+          <span className="status-chip">Stable Profile Engine</span>
         </div>
-        <p className="empty-copy">
-          ชื่อ, อายุ, นิสัย, เรื่องราว, เสียง และภาพอวาตาร์เชื่อมกับ health/sensor/animation
-          ทั้งหมด
-        </p>
         <div className="profile-grid">
           <div className="profile-card">
             <label className="profile-field">
               <span>Name</span>
               <input
                 type="text"
-                value={activeProfile.name}
                 maxLength={28}
-                onChange={(event) => updateActiveProfile("name", event.target.value)}
+                value={activeProfile.name}
+                onChange={(event) => updateProfile("name", event.target.value)}
                 placeholder="Pet name"
               />
             </label>
@@ -1060,14 +1094,14 @@ export default function Home() {
                 min={0}
                 max={30}
                 value={activeProfile.age}
-                onChange={(event) => updateActiveProfile("age", event.target.value)}
+                onChange={(event) => updateProfile("age", event.target.value)}
               />
             </label>
             <label className="profile-field">
-              <span>AI Voice Style</span>
+              <span>Voice Style</span>
               <select
                 value={activeProfile.voiceStyle}
-                onChange={(event) => updateActiveProfile("voiceStyle", event.target.value)}
+                onChange={(event) => updateProfile("voiceStyle", event.target.value)}
               >
                 {VOICE_STYLES.map((voice) => (
                   <option key={voice.id} value={voice.id}>
@@ -1080,37 +1114,23 @@ export default function Home() {
               <span>Story Hint</span>
               <textarea
                 rows={3}
-                value={activeProfile.storySeed}
                 maxLength={160}
-                onChange={(event) => updateActiveProfile("storySeed", event.target.value)}
-                placeholder="เช่น ชอบเดินเล่นตอนเย็น"
+                value={activeProfile.storySeed}
+                onChange={(event) => updateProfile("storySeed", event.target.value)}
               />
             </label>
           </div>
+
           <div className="profile-card">
-            <div className="avatar-wrap">
-              <img src={aiProfile.avatarDataUrl} alt={`${aiProfile.petName} AI avatar`} />
-            </div>
             <p className="profile-ai-line">
-              <strong>AI Temperament:</strong> {aiProfile.temperament}
+              <strong>Personality:</strong> {profileInsight.personality}
             </p>
             <p className="profile-ai-line">
-              <strong>AI Story:</strong> {aiProfile.story}
+              <strong>Story:</strong> {profileInsight.story}
             </p>
             <p className="profile-ai-line">
-              <strong>AI Bark/Voice:</strong> {aiProfile.voiceLine}
+              <strong>Voice:</strong> {profileInsight.voiceLine}
             </p>
-            <p className="profile-ai-line">
-              <strong>AI Motion Tip:</strong> {aiProfile.aiMotionTip}
-            </p>
-            <button
-              type="button"
-              className="chip"
-              onClick={applyAiAnimationSuggestion}
-              disabled={!preferredAiAnimation || isLoadingModel}
-            >
-              Apply AI Motion
-            </button>
           </div>
         </div>
       </section>
@@ -1120,14 +1140,18 @@ export default function Home() {
           <h2>{activePet.label} Model Viewer</h2>
           <div className="viewer-actions">
             <span className="status-chip">
-              {isLoadingModel ? "Loading model..." : "Model ready"}
+              {isLoadingModel
+                ? "Loading model..."
+                : modelError
+                  ? "Model error"
+                  : "Model ready"}
             </span>
             <span className="status-chip">{isArPresenting ? "AR Live" : "AR Standby"}</span>
             <button
               type="button"
               className="chip chip-soft"
               onClick={openArCamera}
-              disabled={isLoadingModel}
+              disabled={isLoadingModel || Boolean(modelError)}
             >
               Open AR Camera
             </button>
@@ -1141,6 +1165,12 @@ export default function Home() {
             </div>
           )}
 
+          {!!modelError && (
+            <div className="loading-overlay loading-overlay-error">
+              <p>{modelError}</p>
+            </div>
+          )}
+
           {isClient ? (
             <model-viewer
               ref={viewerRef}
@@ -1150,6 +1180,7 @@ export default function Home() {
               autoplay
               animation-loop
               animation-name={activeAnimation || undefined}
+              animation-crossfade-duration="280"
               camera-controls
               shadow-intensity="1"
               exposure="1"
@@ -1166,9 +1197,7 @@ export default function Home() {
         <div className="health-head">
           <h2>Wellness Tracker</h2>
           <div className="health-head-actions">
-            <span className={`health-badge health-${healthStatus.tone}`}>
-              {healthStatus.label}
-            </span>
+            <span className={`health-badge health-${healthStatus.tone}`}>{healthStatus.label}</span>
             <button
               type="button"
               className={`chip chip-soft chip-sensor-toggle ${
@@ -1180,6 +1209,7 @@ export default function Home() {
             </button>
           </div>
         </div>
+
         {activePetId === "dog" && (
           <div className="sensor-card">
             <div className="sensor-status-row">
@@ -1196,10 +1226,9 @@ export default function Home() {
               >
                 {sensorLabel}
               </span>
-              <span className="sensor-updated">
-                {formatSensorTime(sensorSnapshot?.timestamp)}
-              </span>
+              <span className="sensor-updated">{formatSensorTime(sensorSnapshot?.timestamp)}</span>
             </div>
+
             <div className="sensor-grid">
               <div>
                 <p>Heart Rate</p>
@@ -1218,16 +1247,18 @@ export default function Home() {
                 <strong>{sensorSnapshot?.activityLevel ?? "--"}%</strong>
               </div>
             </div>
+
             {sensorError && <p className="sensor-error-copy">{sensorError}</p>}
             <p className="sensor-hint">
-              Feed sensor data by POSTing to <code>/api/health/ingest</code> from
-              your device gateway.
+              Feed sensor data by POSTing to <code>/api/health/ingest</code> from your device.
             </p>
           </div>
         )}
+
         <p className="health-score">
           Health Score <strong>{healthScore}</strong>/100
         </p>
+
         <div className="health-grid">
           {HEALTH_METRICS.map((metric) => (
             <div key={metric.key} className="health-row">
@@ -1247,6 +1278,7 @@ export default function Home() {
             </div>
           ))}
         </div>
+
         <div className="button-row health-action-row">
           {HEALTH_ACTIONS.map((action) => (
             <button
@@ -1259,14 +1291,14 @@ export default function Home() {
             </button>
           ))}
         </div>
-        <p className="health-note">
-          Simulation metric for the AR pet experience, not a medical system.
-        </p>
+
+        <p className="health-note">Simulation metric for AR pet experience, not medical advice.</p>
       </section>
 
       <section className="panel reveal reveal-6">
         <h2>Controls</h2>
-        <p className="empty-copy">รวมปุ่มควบคุมสำคัญไว้ในแผงเดียว</p>
+        <p className="empty-copy">แผงควบคุมใหม่ ลดโค้ดซ้ำและเน้นความเสถียร</p>
+
         <div className="control-stack">
           <div className="control-block">
             <div className="camera-head">
@@ -1274,7 +1306,7 @@ export default function Home() {
               <button
                 type="button"
                 className={`chip chip-soft ${isCameraTouring ? "is-active" : ""}`}
-                onClick={toggleCameraTour}
+                onClick={() => setIsCameraTouring((prev) => !prev)}
               >
                 {isCameraTouring ? "Stop Auto Tour" : "Start Auto Tour"}
               </button>
@@ -1285,9 +1317,7 @@ export default function Home() {
                   key={preset.id}
                   type="button"
                   className={`chip ${
-                    !isCameraTouring && activeCameraPreset === preset.id
-                      ? "is-active"
-                      : ""
+                    !isCameraTouring && activeCameraPreset === preset.id ? "is-active" : ""
                   }`}
                   onClick={() => applyCameraPreset(preset.id)}
                 >
@@ -1298,25 +1328,96 @@ export default function Home() {
           </div>
 
           <div className="control-block">
-            <h3 className="control-head">Animations</h3>
+            <div className="animation-head">
+              <h3 className="control-head">Animation System</h3>
+              <span className="status-chip">{animationStatusLabel}</span>
+            </div>
+
             {availableAnimations.length > 0 ? (
-              <div className="button-row">
-                {availableAnimations.map((animationName) => (
+              <>
+                <div className="animation-toolbar">
                   <button
-                    key={animationName}
                     type="button"
-                    className={`chip ${activeAnimation === animationName ? "is-active" : ""}`}
-                    onClick={() => playAnimation(animationName)}
+                    className={`chip chip-soft ${
+                      animationMode === ANIMATION_MODES.MANUAL ? "is-active" : ""
+                    }`}
+                    onClick={() => setAnimationMode(ANIMATION_MODES.MANUAL)}
                   >
-                    {animationName}
+                    Manual
                   </button>
-                ))}
-              </div>
+                  <button
+                    type="button"
+                    className={`chip chip-soft ${
+                      animationMode === ANIMATION_MODES.AUTO ? "is-active" : ""
+                    }`}
+                    onClick={() => {
+                      setAnimationMode(ANIMATION_MODES.AUTO);
+                      setIsAnimationPaused(false);
+                    }}
+                  >
+                    Auto
+                  </button>
+                  <button type="button" className="chip chip-soft" onClick={() => cycleAnimation(-1)}>
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip chip-soft ${!isAnimationPaused ? "is-active" : ""}`}
+                    onClick={toggleAnimationPlayback}
+                  >
+                    {isAnimationPaused ? "Play" : "Pause"}
+                  </button>
+                  <button type="button" className="chip chip-soft" onClick={() => cycleAnimation(1)}>
+                    Next
+                  </button>
+                  <button
+                    type="button"
+                    className="chip chip-soft"
+                    onClick={applyAutoSuggestionNow}
+                    disabled={!autoSuggestedAnimation}
+                  >
+                    Apply Auto Suggestion
+                  </button>
+                </div>
+
+                <label className="animation-speed">
+                  <span>Speed {animationSpeed.toFixed(2)}x</span>
+                  <input
+                    type="range"
+                    min="0.6"
+                    max="1.6"
+                    step="0.05"
+                    value={animationSpeed}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (!Number.isFinite(value)) return;
+                      setAnimationSpeed(clamp(value, 0.6, 1.6));
+                    }}
+                  />
+                </label>
+
+                <div className="button-row">
+                  {availableAnimations.map((animationName) => (
+                    <button
+                      key={animationName}
+                      type="button"
+                      className={`chip ${activeAnimation === animationName ? "is-active" : ""}`}
+                      onClick={() => playAnimation(animationName)}
+                      title={animationName}
+                    >
+                      {formatAnimationLabel(animationName)}
+                    </button>
+                  ))}
+                </div>
+              </>
             ) : (
               <p className="empty-copy">No embedded animations detected for this model.</p>
             )}
+
             {availableAnimations.length > 0 && (
-              <p className="control-tip">แสดงเฉพาะท่าหลักที่จำเป็น</p>
+              <p className="control-tip">
+                Manual = เลือกท่าเอง, Auto = ระบบเลือกท่าตามสุขภาพและเซ็นเซอร์
+              </p>
             )}
           </div>
 
@@ -1334,7 +1435,7 @@ export default function Home() {
                   : "Play Pet Voice"}
             </button>
             <p className="control-tip">
-              {aiProfile.voiceLine} ({aiProfile.voiceStyle.label}, {soundPlaybackRate.toFixed(2)}x)
+              {profileInsight.voiceLine} ({activeVoiceStyle.label}, {soundPlaybackRate.toFixed(2)}x)
             </p>
           </div>
         </div>

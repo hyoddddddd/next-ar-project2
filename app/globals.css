@@ -1,4 +1,6 @@
 :root {
+  --font-body: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+  --font-heading: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
   --bg: #eef5ff;
   --bg-soft: #f8fbff;
   --text: #172032;
@@ -26,6 +28,14 @@ body {
   font-family: var(--font-body), sans-serif;
   color: var(--text);
   background: linear-gradient(180deg, #f1f6fd 0%, #f7fbff 100%);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--brand-strong);
+  outline-offset: 2px;
 }
 
 h1,
@@ -303,6 +313,15 @@ h3 {
   font-weight: 600;
 }
 
+.loading-overlay-error {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 236, 236, 0.92),
+    rgba(255, 244, 244, 0.88)
+  );
+  color: #991b1b;
+}
+
 model-viewer {
   width: 100%;
   height: clamp(340px, 56vw, 590px);
@@ -341,6 +360,37 @@ model-viewer {
   margin: 0.55rem 0 0;
   color: var(--text-soft);
   font-size: 0.8rem;
+}
+
+.animation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.animation-toolbar {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.56rem;
+}
+
+.animation-speed {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.76rem;
+}
+
+.animation-speed span {
+  font-size: 0.8rem;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.animation-speed input[type="range"] {
+  width: 100%;
+  accent-color: var(--brand);
 }
 
 .chip,
@@ -642,6 +692,11 @@ model-viewer {
   }
 
   .camera-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .animation-head {
     flex-direction: column;
     align-items: flex-start;
   }

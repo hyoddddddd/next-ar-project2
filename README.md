@@ -1,8 +1,15 @@
 # AR Pet Studio (Next.js)
 
-Interactive 3D pet viewer with AR, animation controls, camera motion, and a wellness tracker that can ingest live sensor data from a real dog.
+Interactive 3D/AR pet web app with:
+- model viewer + AR camera
+- animation engine (manual + auto mode)
+- wellness dashboard
+- live sensor ingest API for real dog telemetry
+- profile + voice behavior controls
 
-## Run (Dev)
+## Run
+
+### Dev
 
 ```bash
 npm install
@@ -11,22 +18,37 @@ npm run dev
 
 Open `http://localhost:3000` (or the port shown in terminal).
 
-## Run (Production)
+### Production
 
 ```bash
 npm run build
 npm run start
 ```
 
-## Features
+## Current System Checklist
 
-- 3D model viewer with AR (`scene-viewer`, `webxr`, `quick-look`)
-- Animation buttons generated from each model's embedded animation names
-- Camera presets + auto tour
-- Wellness tracker with Energy / Mood / Fitness / Hydration
-- Live sensor sync for real dog telemetry (heart rate, temperature, SpO2, activity, hydration)
+- Frontend: Next.js App Router single-page dashboard
+- AR/3D engine: `<model-viewer>` with `webxr`, `scene-viewer`, `quick-look`
+- Animation system:
+  - Manual mode (prev / pause-play / next / direct clip buttons)
+  - Auto mode (chooses clip by health + sensor freshness)
+  - Speed control (0.6x - 1.6x)
+  - Keep-alive loop to reduce unexpected pause
+- Wellness system:
+  - Energy / Mood / Fitness / Hydration
+  - Health actions: feed, water, play, rest
+  - Simulated drift from active animation
+- Sensor system:
+  - `POST /api/health/ingest` (validated + optional API key)
+  - `GET /api/health/live?petId=dog`
+  - UI polling + blend into wellness score
+- Profile system:
+  - Per-pet name/age/voice/story
+  - Stored in browser localStorage
+- Camera system:
+  - Presets + auto tour
 
-## Live Sensor Integration
+## Sensor Integration
 
 ### 1) Configure sensor key
 
@@ -34,17 +56,15 @@ npm run start
 cp .env.example .env.local
 ```
 
-Set your own key:
+Set a key:
 
 ```bash
 SENSOR_API_KEY=your-strong-secret
 ```
 
-### 2) Sensor gateway pushes data
+### 2) Push telemetry from gateway device
 
-Send from ESP32/Raspberry Pi/phone bridge to:
-
-- `POST /api/health/ingest`
+- Endpoint: `POST /api/health/ingest`
 - Header: `x-sensor-key: <SENSOR_API_KEY>`
 - JSON body:
 
@@ -59,7 +79,7 @@ Send from ESP32/Raspberry Pi/phone bridge to:
 }
 ```
 
-Quick local test:
+Quick test:
 
 ```bash
 curl -X POST http://localhost:3000/api/health/ingest \
@@ -68,18 +88,19 @@ curl -X POST http://localhost:3000/api/health/ingest \
   -d '{"petId":"dog","heartRate":102,"temperatureC":38.4,"spo2":97,"activityLevel":63,"hydrationPct":74}'
 ```
 
-### 3) UI pulls latest reading
-
-The app polls:
+### 3) UI read endpoint
 
 - `GET /api/health/live?petId=dog`
 
-When fresh data exists, the wellness tracker automatically blends health score with sensor values.
+When reading is fresh, the app blends sensor data into wellness.
 
-### Storage note
+## Release Notes
 
-Current implementation stores latest sensor reading in memory on the Next.js server process.
-For multi-instance or long-term persistence on Vercel, replace it with Redis/Postgres.
+- Build pipeline currently passes with `npm run build`.
+- Quick release gate: `npm run verify`
+- `npm run lint` is a placeholder script (ESLint config not added yet).
+- Sensor store now persists to temp file (`/tmp/ar-pet-studio/sensor-readings.json`) for better consistency in production workers.
+- For multi-machine/cluster deployment, move sensor store to Redis/Postgres.
 
 ## Asset Paths
 
